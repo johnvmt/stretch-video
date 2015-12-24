@@ -1,0 +1,123 @@
+<template>
+	<style>
+		.mejs-offscreen { display: none; }
+		.mejs-container{
+			width: 100% !important;
+			height: 100% !important;
+		}
+		.mejs-layers .mejs-layer{
+			width: 100% !important;
+			height: 100% !important;
+		}
+	</style>
+	<div style="width: 100%; height: 100%;"></div>
+</template>
+
+<!-- Mediaelement -->
+<script src="mediaelement/jquery.min.js"></script>
+<script src="mediaelement/mediaelement-and-player.min.js"></script>
+<link rel="stylesheet" href="mediaelement/mediaelementplayer.min.css" />
+
+<script>
+	(function(window, document) {
+		function addPlayer(rootElem, videoParams, meParams, rootDoc) {
+			// merge parameters for video element
+			var videoParamsDefault = {
+				type: "video/mp4"/*"application/x-mpegURL"*/,
+				width: rootElem.offsetWidth,
+				height: rootElem.offsetHeight
+			};
+			$.extend(videoParamsDefault, videoParams);
+
+			console.log(videoParams, videoParamsDefault);
+
+			// merge parameters for mediaelement
+			var meParamsDefault = {
+				defaultVideoWidth: rootElem.offsetWidth,
+				defaultVideoHeight: rootElem.offsetHeight,
+				enableAutosize: false
+			};
+			$.extend(meParamsDefault, meParams);
+
+			if(typeof videoParamsDefault['muted'] != "undefined")
+				meParamsDefault['startVolume'] = 0;
+
+			// clear any old players
+			rootElem.innerHTML = "";
+
+			// create and attach the video element
+			var videoElem = document.createElement('video');
+			for (var key in videoParamsDefault) {
+				if (videoParamsDefault.hasOwnProperty(key))
+					videoElem.setAttribute(key, videoParamsDefault[key]);
+			}
+
+			rootElem.appendChild(videoElem);
+
+			// create the mediaelement player
+			return new MediaElement(videoElem, meParamsDefault, rootDoc);
+		}
+
+		// this file
+		var componentDoc =  (document._currentScript || document.currentScript).ownerDocument;
+		var componentDir = componentDoc.baseURI.substring(0, componentDoc.baseURI.lastIndexOf('/'));
+
+		// Gets content from <template>
+		var template = componentDoc.querySelector('template').content;
+
+		// Creates an object based in the HTML Element prototype
+		var ElemProto = Object.create(HTMLElement.prototype);
+
+		// Fires when an instance of the element is created
+		ElemProto.createdCallback = function() {
+			var self = this;
+
+			// Creates the shadow root
+			var shadowRoot = this.createShadowRoot();
+
+			// Adds a template clone into shadow root
+			var clone = document.importNode(template, true);
+			shadowRoot.appendChild(clone);
+
+			// get params from datastore-video element
+			var elementAttributes = {};
+			for(var ctr = 0; ctr < this.attributes.length; ctr++) {
+				elementAttributes[this.attributes[ctr].nodeName] = this.attributes[ctr].nodeValue;
+			}
+
+			var meParamsDefault = {
+				pluginPath: componentDir + '/mediaelement/', // path to Flash and Silverlight plugins
+				success: function(mediaElement, domObject) {
+					self.mediaElement = mediaElement;
+					console.log("SUCCESS");
+					/*					mediaElement.play(); */
+					//mediaElement.setVolume(0.8);
+				},
+				error: function () {
+					console.log("ERR");
+				}
+			};
+
+			var target = shadowRoot.querySelector('div');
+
+			$(shadowRoot).ready(function() {
+				addPlayer(target, elementAttributes, meParamsDefault, shadowRoot);
+			});
+
+			window.addEventListener('resize', function() {
+				// TODO preserve position, volume
+				addPlayer(target, elementAttributes, meParamsDefault, shadowRoot);
+
+			});
+		};
+
+		// Fires when an attribute was added, removed, or updated
+		ElemProto.attributeChangedCallback = function(attr, oldVal, newVal) {
+
+		};
+
+		window.StretchVideo = document.registerElement('stretch-video', {
+			prototype: ElemProto
+		});
+	})(window, document);
+</script>
