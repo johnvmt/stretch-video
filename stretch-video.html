@@ -1,27 +1,10 @@
 <template>
-	<style>
-		.me-plugin {width: 100%; height: 100%;}
-		.mejs-offscreen { display: none; }
-		.mejs-container{
-			width: 100% !important;
-			height: 100% !important;
-		}
-		.mejs-layers .mejs-layer{
-			width: 100% !important;
-			height: 100% !important;
-		}
-	</style>
 	<div style="width: 100%; height: 100%; background-color: #ff0000; overflow: hidden"></div>
 </template>
 
-<!-- Mediaelement -->
-<script src="mediaelement/jquery.min.js"></script>
-<script src="mediaelement/mediaelement-and-player.min.js"></script>
-<link rel="stylesheet" href="mediaelement/mediaelementplayer.min.css" />
-
 <script>
 	(function(window, document) {
-		// this file
+		// Create references to this file and directory
 		var componentDoc =  (document._currentScript || document.currentScript).ownerDocument;
 		var componentDir = componentDoc.baseURI.substring(0, componentDoc.baseURI.lastIndexOf('/'));
 
@@ -33,45 +16,82 @@
 
 		// Fires when an instance of the element is created
 		ElemProto.createdCallback = function() {
-			var self = this;
-
 			// Creates the shadow root
-			self.shadowRoot = self.createShadowRoot();
+			this.shadowRoot = this.createShadowRoot();
 
 			// Adds a template clone into shadow root
-			self.shadowRoot.appendChild(document.importNode(template, true));
+			this.shadowRoot.appendChild(document.importNode(template, true));
 
 			// Get the video container (div)
-			self.videoContainer = self.shadowRoot.querySelector('div');
+			this.videoContainer = this.shadowRoot.querySelector('div');
 
-			// get params from datastore-video element
-			var elementAttributes = {};
+			// get and merge params from stretch-video element
+			var elementAttributeDefaults = {};
+			this.elementAttributes = objectExtend(elementAttributeDefaults, this.getAttributes());
 
-			for(var ctr = 0; ctr < this.attributes.length; ctr++) {
-				elementAttributes[this.attributes[ctr].nodeName] = this.attributes[ctr].nodeValue;
+			// Add the video to the container
+			this.addVideo(this.elementAttributes, this.videoContainer);
+
+			// resize the player when the parent element is resized
+			var self = this;
+			window.addEventListener('resize', function() {
+				self.resize();
+			});
+		};
+
+		ElemProto.addVideo = function(videoAttributes, videoContainer) {
+			// create the <video> tag
+			var videoElem = document.createElement('video');
+
+			// copy attributes to <video>
+			for(attributeKey in videoAttributes) {
+				if(videoAttributes.hasOwnProperty(attributeKey))
+					videoElem[attributeKey] = videoAttributes[attributeKey];
 			}
 
-			var meParamsDefault = {
-				pluginPath: componentDir + '/mediaelement/', // path to Flash and Silverlight plugins
-				success: function(mediaElement, domObject) {
-					self.mediaElement = mediaElement;
-					console.log("SUCCESS");
-					/* mediaElement.play(); */
-					//mediaElement.setVolume(0);
-				},
-				error: function () {
-					console.log("ERR");
-				}
-			};
+			// resize the video once the video's metadata (size) is loaded
+			var self = this;
+			videoElem.addEventListener('loadedmetadata', function() {
+				// play+pause to overcome Chrome bug
+				self.play();
+				self.pause();
 
-			$(self.shadowRoot).ready(function() {
-				createPlayer(self.videoContainer, elementAttributes, meParamsDefault, self.shadowRoot);
+				self.resize();
 			});
 
-			window.addEventListener('resize', function() {
-				resizePlayer(self.videoContainer);
-				// This works for hls: addPlayer(target, elementAttributes, meParamsDefault, shadowRoot);
-			});
+			// add the <video> to the <div>
+			videoContainer.appendChild(videoElem);
+		};
+
+		ElemProto.play = function() {
+			var videoElem = this.videoContainer.querySelector('video');
+			videoElem.play();
+		};
+
+		ElemProto.pause = function() {
+			var videoElem = this.videoContainer.querySelector('video');
+			videoElem.pause();
+		};
+
+		ElemProto.reset = function(time) {
+			// TODO add ability to set non-0 start times
+			this.setTime(0);
+		};
+
+		ElemProto.setTime = function(time) {
+			// TODO should be triggered by setting currentTime attribute
+			var videoElem = this.videoContainer.querySelector('video');
+			videoElem.currentTime = time;
+		};
+		
+		ElemProto.resize = function() {
+			var videoContainer = this.videoContainer;
+			var videoElem = videoContainer.querySelector('video');
+			videoElem.width = videoElem.videoWidth;
+			videoElem.height = videoElem.videoHeight;
+
+			videoElem.style.transformOrigin = "top left";
+			videoElem.style.transform = "scale(" + videoContainer.offsetWidth / videoElem.videoWidth + ", " + videoContainer.offsetHeight / videoElem.videoHeight + ")";
 		};
 
 		// Fires when an attribute was added, removed, or updated
@@ -79,82 +99,33 @@
 
 		};
 
-		ElemProto.play = function() {
-			console.log("PLAY");
-			try {
-				self.mediaElement.play()
+		ElemProto.getAttributes = function() {
+			var attributes = {};
+			for(var ctr = 0; ctr < this.attributes.length; ctr++) {
+				attributes[this.attributes[ctr].nodeName] = this.attributes[ctr].nodeValue;
 			}
-			catch(error) {
-
-
-			}
+			return attributes;
 		};
 
-		function resizePlayer(videoContainer) {
-
-			if(videoContainer.getElementsByTagName('embed').length) { // using flash fallback
-				/* var videoElem = videoContainer.querySelector('embed');
-				videoElem.style.transformOrigin = "top left";
-				console.log(videoContainer.offsetWidth, parseInt(videoElem.width), videoContainer.offsetWidth / parseInt(videoElem.width));
-				console.log(videoContainer.offsetHeight, parseInt(videoElem.height), videoContainer.offsetHeight / parseInt(videoElem.height));
-				videoElem.style.transform = "scale(" + videoContainer.offsetWidth / videoElem.width + ", " + videoContainer.offsetHeight / videoElem.height + ")"; */
-			}
-			else { // native HTML5 video
-				var videoElem = videoContainer.querySelector('video');
-				videoElem.width = videoElem.videoWidth;
-				videoElem.height = videoElem.videoHeight;
-
-				// videoContainer.style.overflow = "hidden";
-				videoElem.style.transformOrigin = "top left";
-				videoElem.style.transform = "scale(" + videoContainer.offsetWidth / videoElem.videoWidth + ", " + videoContainer.offsetHeight / videoElem.videoHeight + ")";
-			}
-		}
-
-		function createPlayer(rootElem, videoParams, meParams, rootDoc) {
-			// merge parameters for video element
-			var videoExt = videoParams.src.split('.').pop();
-
-			var videoParamsDefault = {
-				type: videoExt == "m3u8" ? "application/x-mpegURL" : "video/" + videoExt,
-				width: rootElem.offsetWidth,
-				height: rootElem.offsetHeight
-			};
-			$.extend(videoParamsDefault, videoParams);
-
-			console.log(videoParamsDefault);
-
-			// merge parameters for mediaelement
-			var meParamsDefault = {
-				defaultVideoWidth: rootElem.offsetWidth,
-				defaultVideoHeight: rootElem.offsetHeight,
-				enableAutosize: false
-			};
-
-			$.extend(meParamsDefault, meParams);
-
-			if(typeof videoParamsDefault['muted'] != "undefined")
-				meParamsDefault['startVolume'] = 0;
-
-			// clear any old players
-			rootElem.innerHTML = "";
-
-			// create and attach the video element
-			var videoElem = document.createElement('video');
-			for (var key in videoParamsDefault) {
-				if (videoParamsDefault.hasOwnProperty(key))
-					videoElem.setAttribute(key, videoParamsDefault[key]);
-			}
-
-			videoElem.addEventListener("loadedmetadata", function() {
-				resizePlayer(rootElem);
+		// Utility Functions
+		function objectExtend() {
+			var merged = {};
+			objectForEach(arguments, function(argument) {
+				for (var attrname in argument) {
+					if(argument.hasOwnProperty(attrname))
+						merged[attrname] = argument[attrname];
+				}
 			});
+			return merged;
 
-			rootElem.appendChild(videoElem);
-
-			console.log(meParamsDefault);
-
-			// create the mediaelement player
-			return new MediaElement(videoElem, meParamsDefault, rootDoc);
+			function objectForEach(object, callback) {
+				// run function on each property (child) of object
+				var property;
+				for(property in object) { // pull keys before looping through?
+					if (object.hasOwnProperty(property))
+						callback(object[property], property, object);
+				}
+			}
 		}
 
 		window.StretchVideo = document.registerElement('stretch-video', {
