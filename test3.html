@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script>
+	var EventPoints = {
+		_points: {},
+		add: function(code, time) {
+			time = Number(time);
+			if(typeof this._points[time] === 'undefined')
+				this._points[time] = {};
+
+			var uniqueId = this._uniqueId();
+			this._points[time][uniqueId] = code;
+			return time + '-' + uniqueId;
+		},
+		remove: function(eventPointId) {
+			var pointParts = eventPointId.split('-');
+			var time = Number(pointParts.shift());
+			var uniqueId = pointParts.join('-');
+
+			if(typeof this._points[time] !== 'undefined' && typeof this._points[time][uniqueId] === 'function') {
+				delete this._points[time][uniqueId];
+				return true;
+			}
+			else
+				return false;
+
+		},
+		run: function(time) {
+			time = Number(time);
+			if(time in this._points) {
+				for(var uniqueId in this._points[time]) { // pull keys before looping through?
+					if (this._points[time].hasOwnProperty(uniqueId))
+						this._points[time][uniqueId]();
+				}
+			}
+		},
+		nextTime: function(timeNow) {
+			timeNow = Number(timeNow);
+			var maxTime = undefined;
+			for(var time in this._points) { // pull keys before looping through?
+				if(this._points.hasOwnProperty(time) && time > timeNow && (typeof maxTime === 'undefined' || time < maxTime))
+					maxTime = time;
+			}
+			return maxTime;
+		},
+		prevTime: function(timeNow) {
+			timeNow = Number(timeNow);
+			var minTime = undefined;
+			for(var time in this._points) { // pull keys before looping through?
+				if(this._points.hasOwnProperty(time) && time < timeNow && (typeof minTime === 'undefined' || time > minTime))
+					minTime = time;
+			}
+			return minTime;
+		},
+		removeAll: function() {
+			this._points = {};
+		},
+		_uniqueId: function() {
+			function s4() {
+				return Math.floor((1 + Math.random()) * 0x10000)
+						.toString(16)
+						.substring(1);
+			}
+			return s4() + s4() + '-' + s4() + '-' + s4() + '-' +
+					s4() + '-' + s4() + s4() + s4();
+		}
+	};
+
+	var pointId = EventPoints.add(function() { console.log("MYFN")}, 2.3);
+	console.log(pointId);
+	EventPoints.run(2.3);
+	console.log(EventPoints.prevTime(2.4));
+	EventPoints.removeAll(pointId);
+
+</script>
+</body>
+</html>

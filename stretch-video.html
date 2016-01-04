@@ -1,6 +1,48 @@
 <template>
-	<div style="width: 100%; height: 100%; background-color: #ff0000; overflow: hidden"></div>
+	<style>
+		a {
+			/*
+			background-image: url('http://datastore.turner.com/tools/vidplayer/images/play.png');
+			background-repeat: no-repeat;
+			background-position:center;
+			*/
+			width: 40px;
+			height: 40px;
+			display: inline-block;
+			color: rgba(255,255,255,1);
+			text-decoration: none;
+			padding: 4px;
+			border-radius: 5px;
+			background-color: rgba(30, 30, 30, 0.75);
+			box-shadow: 0px 3px 3px rgba(0,0,0, 0.25), inset 0 0 25px rgba(0, 0, 0, 0.3);
+			text-align: center;
+			top: 0px;
+			margin: 3px;
+			cursor: pointer;
+
+		}
+
+		a img {
+			width: 100%;
+			height: 100%;
+			-webkit-filter: invert(100%) opacity(75%);
+			filter: invert(100%) opacity(75%);
+		}
+
+	</style>
+	<div style="width: 100%; height: 100%; background-color: #ff0000; overflow: hidden">
+		<div id="controls" style="z-index: 1; position: absolute; top: 0; left: 0;">
+			<a data-transport="play"><img src="images/play.svg" /></a>
+			<a data-transport="pause"><img src="images/pause.svg" /></a>
+			<a data-transport="reset"><img src="images/refresh.svg" /></a>
+
+			<a data-transport="prevPoint"><img src="images/previous.svg" /></a>
+			<a data-transport="nextPoint"><img src="images/next.svg" /></a>
+		</div>
+	</div>
 </template>
+
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.5.0/css/font-awesome.min.css">
 
 <script>
 	(function(window, document) {
@@ -16,6 +58,7 @@
 
 		// Fires when an instance of the element is created
 		ElemProto.createdCallback = function() {
+
 			// Creates the shadow root
 			this.shadowRoot = this.createShadowRoot();
 
@@ -32,11 +75,90 @@
 			// Add the video to the container
 			this.addVideo(this.elementAttributes, this.videoContainer);
 
+			// Add the stop points from <stop-point> children
+			this.setStopPoints();
+
+			var thisElem = this;
+
+			thisElem.addEventListener('DOMSubtreeModified', function () {
+				thisElem.setStopPoints();
+			}, false);
+
+			// Add the actions to the buttons (clicking play button plays the video, etc.)
+			thisElem.addButtonsEventListeners(this.videoContainer);
+
 			// resize the player when the parent element is resized
-			var self = this;
 			window.addEventListener('resize', function() {
-				self.resize();
+				thisElem.resize();
 			});
+		};
+
+		ElemProto.addStopPoint = function(seconds) {
+			var thisElem = this;
+			this.EventPoints.add(function() {
+				thisElem.pause(seconds); // TODO add function that explicitly sets which time this is supposed to pause at
+			}, seconds);
+		};
+
+		ElemProto.setStopPoints = function() {
+			var nodeName = 'stop-point'; // name of the children we want to capture
+			var attributeName = 'time'; // attribute we want to capture
+
+			var thisElement = this;
+			var thisFunction = function() {
+				thisElement.setStopPoints()
+			};
+
+			this.EventPoints.removeAll(); // TODO remove only the stop points that were added
+
+			// Disconnect all the observers, so they can be added back in next step
+			if(typeof this.observers !== 'undefined') {
+				for (var resultIndex = 0; resultIndex < this.observers.length; resultIndex++) {
+					this.observers[resultIndex].disconnect();
+				}
+			}
+			this.observers = [];
+
+			for(var resultIndex = 0; resultIndex < this.children.length; resultIndex++) {
+				if(this.children[resultIndex]['localName'] === nodeName) {
+					// add observers to detect changes to existing stoppoints
+					this.observers.push(this.addElementObserver(this.children[resultIndex], ['attributes'], thisFunction));
+
+					var attributes = this.getAttributes(this.children[resultIndex]);
+					if(typeof attributes[attributeName] !== 'undefined')
+						this.addStopPoint(parseFloat(attributes[attributeName]));
+				}
+			}
+		};
+
+		ElemProto.addButtonsEventListeners = function(videoContainer) {
+			var selector = 'data-transport';
+			var events = ["click"];
+
+			var thisElement = this;
+
+			// Get the elements we'll add the handlers to
+			var eventElements = videoContainer.querySelectorAll('[' + selector + ']');
+
+			for (var resultIndex = 0; resultIndex < eventElements.length; resultIndex++) {
+				// Create a closure for elementFunction
+				(function(){
+					// Get the function this element is supposed to trigger
+					var elementFunction = eventElements[resultIndex].getAttribute(selector);
+
+					// Check the function actually exists
+					// TODO: add argument options?
+					if(typeof thisElement[elementFunction] === 'function') {
+						var callback = function() {
+							thisElement[elementFunction]();
+						};
+
+						thisElement.addElementEventListener(eventElements[resultIndex], events, callback);
+					}
+					else
+						console.error(elementFunction, "not found");
+				})();
+			}
 		};
 
 		ElemProto.addVideo = function(videoAttributes, videoContainer) {
@@ -50,17 +172,64 @@
 			}
 
 			// resize the video once the video's metadata (size) is loaded
-			var self = this;
+			var thisElem = this;
 			videoElem.addEventListener('loadedmetadata', function() {
-				// play+pause to overcome Chrome bug
-				self.play();
-				self.pause();
+				thisElem.resize();
+			});
 
-				self.resize();
+			videoElem.addEventListener('canplaythrough', function() {
+				// play+pause to overcome Chrome bug
+				thisElem.play();
+				thisElem.pause();
+			});
+
+			videoElem.addEventListener('play', function() {
+				thisElem.playStart = videoElem.currentTime; // prevents pausing immediately after
+				thisElem.videoPlayTimeUpdate();
+			});
+
+			videoElem.addEventListener('pause', function() {
+				// delete any pause timers
+				if(typeof thisElem.timeoutEvent !== 'undefined') {
+					thisElem.timeoutEvent.cancel();
+					delete thisElem.timeoutEvent;
+				}
+			});
+
+			videoElem.addEventListener('ended', function() {
+				console.log("ENDED");
+			});
+
+			videoElem.addEventListener('timeupdate', function() {
+				thisElem.videoPlayTimeUpdate();
 			});
 
 			// add the <video> to the <div>
 			videoContainer.appendChild(videoElem);
+		};
+
+		ElemProto.videoPlayTimeUpdate = function() {
+
+			// triggered on play and timeupdate
+			var thisElem = this;
+
+			if(typeof thisElem.timeoutEvent === 'undefined') { // not in loop
+				var videoElem = this.videoContainer.querySelector('video');
+				var vidTime = videoElem.currentTime;
+				var tolerance = 0.8; // approximate time between time updates TODO move this to config
+				var nextEventTime = thisElem.EventPoints.nextTime(vidTime);
+
+				if(thisElem.lastPause !== nextEventTime && vidTime + tolerance > nextEventTime) { // next update would occur after event time
+					// start the loop
+					var targetTimeout = (nextEventTime - vidTime) * 1000;
+
+					// set a timeout for the remaining time left
+					thisElem.timeoutEvent = thisElem.setTimeoutAccurate(function() {
+						thisElem.EventPoints.run(nextEventTime);
+						delete thisElem.timeoutEvent; // delete the timer when complete
+					}, targetTimeout);
+				}
+			}
 		};
 
 		ElemProto.play = function() {
@@ -68,12 +237,14 @@
 			videoElem.play();
 		};
 
-		ElemProto.pause = function() {
+		ElemProto.pause = function(seconds) {
+			this.lastPause = seconds; // prevents repeat pausing at same point
 			var videoElem = this.videoContainer.querySelector('video');
 			videoElem.pause();
 		};
 
-		ElemProto.reset = function(time) {
+		ElemProto.reset = function() {
+			console.log("RESET");
 			// TODO add ability to set non-0 start times
 			this.setTime(0);
 		};
@@ -82,8 +253,25 @@
 			// TODO should be triggered by setting currentTime attribute
 			var videoElem = this.videoContainer.querySelector('video');
 			videoElem.currentTime = time;
+			console.log("CURRENT TIME", videoElem.currentTime);
 		};
-		
+
+		ElemProto.nextPoint = function() {
+			var videoElem = this.videoContainer.querySelector('video');
+			var currentTime = videoElem.paused && typeof this.lastPause !== 'undefined' ? this.lastPause : videoElem.currentTime; // uses lastpause if available
+			var nextEventTime = this.EventPoints.nextTime(currentTime);
+			if(typeof nextEventTime !== 'undefined')
+				this.setTime(nextEventTime);
+		};
+
+		ElemProto.prevPoint = function() {
+			var videoElem = this.videoContainer.querySelector('video');
+			var currentTime = videoElem.paused && typeof this.lastPause !== 'undefined' ? this.lastPause : videoElem.currentTime; // uses lastpause if available
+			var prevEventTime = this.EventPoints.prevTime(currentTime); // TODO change to use pause point
+			if(typeof prevEventTime !== 'undefined')
+				this.setTime(prevEventTime);
+		};
+
 		ElemProto.resize = function() {
 			var videoContainer = this.videoContainer;
 			var videoElem = videoContainer.querySelector('video');
@@ -94,20 +282,191 @@
 			videoElem.style.transform = "scale(" + videoContainer.offsetWidth / videoElem.videoWidth + ", " + videoContainer.offsetHeight / videoElem.videoHeight + ")";
 		};
 
-		// Fires when an attribute was added, removed, or updated
-		ElemProto.attributeChangedCallback = function(attr, oldVal, newVal) {
+		ElemProto.smpteToSeconds = function(timecode, framerate) {
+			var separators = [';', ':'];
+			var timecodeParts = timecode.split(new RegExp(separators.join('|'), 'g'));
 
+			// for each part of timecode, how to modify it to return frames
+			var timecodeFrameModifiers = [
+				function(hours) { return hours * 3600 * framerate}, // hours
+				function(minutes) { return minutes * 60 * framerate}, // minutes
+				function(seconds) { return seconds * framerate}, // seconds
+				function(frames) { return frames; } // frames
+			];
+
+			var frames = 0;
+			for(var partKey = timecodeParts.length - 1; partKey >= 0; partKey--) {
+				frames += timecodeFrameModifiers[partKey](Number(timecodeParts[partKey]));
+			}
+			return frames / framerate;
 		};
 
-		ElemProto.getAttributes = function() {
+		ElemProto.secondsToSmpte = function(seconds, framerate) {
+
+			var frames = seconds * framerate;
+
+			var separators = [':', ':', ':', ':']; // TODO drop frame modifications
+
+			var frameTimecodeModifiers = [
+				function(totalFrames) { return Math.floor(totalFrames / (framerate * 3600)) }, // hours
+				function(totalFrames) { return Math.floor(totalFrames / (framerate * 60)) % 60 }, // minutes
+				function(totalFrames) { return Math.floor(totalFrames / framerate) % framerate }, // seconds
+				function(totalFrames) { return Math.floor(totalFrames % framerate); } // frames
+			];
+
+			var timecode = '';
+			for(var ftIndex = 0; ftIndex < frameTimecodeModifiers.length; ftIndex++) {
+				if(ftIndex > 0)
+					timecode += separators[ftIndex - 1];
+				timecode += String("00" + frameTimecodeModifiers[ftIndex](frames)).slice(-2);
+			}
+			return timecode;
+		};
+
+		// Fires when an attribute was added, removed, or updated
+		ElemProto.attributeChangedCallback = function(attr, oldVal, newVal) {
+			console.log("CHANGED", attr);
+		};
+
+		ElemProto.EventPoints = {
+			_points: {},
+			add: function(code, time) {
+				time = Number(time);
+				if(typeof this._points[time] === 'undefined')
+					this._points[time] = {};
+
+				var uniqueId = this._uniqueId();
+				this._points[time][uniqueId] = code;
+				return time + '-' + uniqueId;
+			},
+			removeAll: function() {
+				this._points = {};
+			},
+			remove: function(eventPointId) {
+				if(typeof eventPointId === 'undefined')
+					return this.removeAll();
+				else {
+					var pointParts = eventPointId.split('-');
+					var time = Number(pointParts.shift());
+					var uniqueId = pointParts.join('-');
+
+					if (typeof this._points[time] !== 'undefined' && typeof this._points[time][uniqueId] === 'function') {
+						delete this._points[time][uniqueId];
+						return true;
+					}
+					else
+						return false;
+				}
+			},
+			run: function(time) {
+				time = Number(time);
+				if(time in this._points) {
+					for(var uniqueId in this._points[time]) { // pull keys before looping through?
+						if (this._points[time].hasOwnProperty(uniqueId))
+							this._points[time][uniqueId]();
+					}
+				}
+			},
+			nextTime: function(timeNow) {
+				timeNow = Number(timeNow);
+				var maxTime = undefined;
+				for(var time in this._points) { // pull keys before looping through?
+					if(this._points.hasOwnProperty(time) && Number(time) > timeNow && (typeof maxTime === 'undefined' || time < maxTime))
+						maxTime = Number(time);
+				}
+				return maxTime;
+			},
+			prevTime: function(timeNow) {
+				timeNow = Number(timeNow);
+				var minTime = undefined;
+				for(var time in this._points) { // pull keys before looping through?
+					if(this._points.hasOwnProperty(time) && time < timeNow && (typeof minTime === 'undefined' || time > minTime))
+						minTime = time;
+				}
+				return minTime;
+			},
+			_uniqueId: function() {
+				function s4() {
+					return Math.floor((1 + Math.random()) * 0x10000)
+							.toString(16)
+							.substring(1);
+				}
+				return s4() + s4() + '-' + s4() + '-' + s4() + '-' +
+						s4() + '-' + s4() + s4() + s4();
+			}
+		};
+
+
+		// Component utility Functions
+		ElemProto.setTimeoutAccurate = function(code, delay) {
+			// TODO add parameter options
+			// TODO add cancelable
+
+			var timerStart = new Date();
+			var timerStartTime = timerStart.getTime();
+			var minStep = 4;
+			var stopped = false;
+
+			timeoutStart();
+
+			return {
+				cancel: function() {
+					stopped = true;
+				}
+
+			};
+
+			function afterSetTimeout() {
+				if(!stopped) {
+					timerEnd = new Date();
+					if (timerEnd.getTime() - timerStartTime >= delay - minStep)
+						code();
+					else
+						timeoutStart();
+				}
+			}
+
+			function timeoutStart() {
+				setTimeout(afterSetTimeout, minStep);
+			}
+		};
+
+		ElemProto.addElementObserver = function(element, mutations, callback) {
+			// possible mutations: 	attributes, childList, characterData
+			var observer = new MutationObserver(callback);
+
+			if(mutations.length > 0) {
+				var observerConfig = {};
+				for(var mutationIndex = 0; mutationIndex < mutations.length; mutationIndex++) {
+					observerConfig[mutations[mutationIndex]] = true;
+				}
+				observer.observe(element, observerConfig);
+			}
+
+			return observer;
+		};
+
+		ElemProto.addElementEventListener = function(element, events, listener) {
+			// if string (single event) passed, convert to Array
+			if(!Array.isArray(events))
+				events = [events];
+
+			for (var eventIndex = 0; eventIndex < events.length; eventIndex++) {
+				element.addEventListener(events[eventIndex], listener);
+			}
+		};
+
+		ElemProto.getAttributes = function(target) {
+			if(typeof target === 'undefined')
+				target = this;
+
 			var attributes = {};
-			for(var ctr = 0; ctr < this.attributes.length; ctr++) {
-				attributes[this.attributes[ctr].nodeName] = this.attributes[ctr].nodeValue;
+			for(var ctr = 0; ctr < target.attributes.length; ctr++) {
+				attributes[target.attributes[ctr].nodeName] = target.attributes[ctr].nodeValue;
 			}
 			return attributes;
 		};
 
-		// Utility Functions
 		function objectExtend() {
 			var merged = {};
 			objectForEach(arguments, function(argument) {
