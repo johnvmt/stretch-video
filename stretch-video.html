@@ -204,6 +204,11 @@
 				thisElem.videoPlayTimeUpdate();
 			});
 
+			videoElem.addEventListener('error', function() {
+				console.log("ERROR");
+
+			});
+
 			// add the <video> to the <div>
 			videoContainer.appendChild(videoElem);
 		};
@@ -253,7 +258,16 @@
 			// TODO should be triggered by setting currentTime attribute
 			var videoElem = this.videoContainer.querySelector('video');
 			videoElem.currentTime = time;
-			console.log("CURRENT TIME", videoElem.currentTime);
+			console.log("CURRENT TIME", videoElem.currentTime, this.seekable(time));
+		};
+
+		ElemProto.seekable = function(time) {
+			var videoElem = this.videoContainer.querySelector('video');
+			for(var seekIndex = 0; seekIndex < videoElem.seekable.length; seekIndex++) {
+				if(videoElem.currentTime > videoElem.seekable.start(seekIndex) && videoElem.currentTime < videoElem.seekable.end(seekIndex))
+					return true
+			}
+			return false
 		};
 
 		ElemProto.nextPoint = function() {
@@ -431,7 +445,7 @@
 			}
 		};
 
-		ElemProto.addElementObserver = function(element, mutations, callback) {
+		addElementObserver = function(element, mutations, callback) {
 			// possible mutations: 	attributes, childList, characterData
 			var observer = new MutationObserver(callback);
 
