@@ -35,7 +35,6 @@
 			<a data-transport="play"><img src="images/play.svg" /></a>
 			<a data-transport="pause"><img src="images/pause.svg" /></a>
 			<a data-transport="reset"><img src="images/refresh.svg" /></a>
-
 			<a data-transport="prevPoint"><img src="images/previous.svg" /></a>
 			<a data-transport="nextPoint"><img src="images/next.svg" /></a>
 		</div>
@@ -122,6 +121,7 @@
 			for(var resultIndex = 0; resultIndex < this.children.length; resultIndex++) {
 				if(this.children[resultIndex]['localName'] === nodeName) {
 					// add observers to detect changes to existing stoppoints
+					console.log(this)
 					this.observers.push(this.addElementObserver(this.children[resultIndex], ['attributes'], thisFunction));
 
 					var attributes = this.getAttributes(this.children[resultIndex]);
@@ -418,10 +418,21 @@
 
 			var timerStart = new Date();
 			var timerStartTime = timerStart.getTime();
-			var minStep = 4;
+			var minStep = 8;
 			var stopped = false;
 
-			timeoutStart();
+			window.requestAnimationFrame(step);
+
+			function step() {
+				if(!stopped) {
+					timerEnd = new Date();
+					if (timerEnd.getTime() - timerStartTime >= delay - minStep)
+						code();
+					else
+						window.requestAnimationFrame(step);
+				}
+
+			}
 
 			return {
 				cancel: function() {
@@ -430,22 +441,9 @@
 
 			};
 
-			function afterSetTimeout() {
-				if(!stopped) {
-					timerEnd = new Date();
-					if (timerEnd.getTime() - timerStartTime >= delay - minStep)
-						code();
-					else
-						timeoutStart();
-				}
-			}
-
-			function timeoutStart() {
-				setTimeout(afterSetTimeout, minStep);
-			}
 		};
 
-		addElementObserver = function(element, mutations, callback) {
+		ElemProto.addElementObserver = function(element, mutations, callback) {
 			// possible mutations: 	attributes, childList, characterData
 			var observer = new MutationObserver(callback);
 
