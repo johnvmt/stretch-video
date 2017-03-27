@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<!-- Polyfill -->
+	<!--<script src="webcomponents.min.js"></script>-->
+	<link rel="import" href="./stretch-video.html">
+
+
+	<style>
+		body, html {
+			height: 100%;
+			padding: 0;
+			margin: 0;
+			background-color: #ff0000;
+		}
+	</style>
+</head>
+<body>
+<div style="width: 50%; height: 50%; position: relative; top: 5%; left: 5%; display: block; background-color: #333333">
+	<stretch-video id="sv1" src="video/tc30.mp4">
+		<!--<event-point callback="hit4" time="2"></event-point>-->
+		<event-point time="8"></event-point>
+	</stretch-video>
+	<stretch-video id="sv2" src="video/tc30.mp4">
+		<!--<event-point callback="hit4" time="2"></event-point>-->
+		<event-point time="8"></event-point>
+	</stretch-video>
+	<script>
+		var sv1 = document.querySelector('#sv1');
+		var sv2 = document.querySelector('#sv2');
+
+		function hit4() {
+			console.log("HIT4");
+		}
+
+		function hit5() {
+			console.log("HIT5");
+		}
+
+		var evPoint1 = document.createElement('event-point');
+		evPoint1.setAttribute('time', 4);
+		evPoint1.setAttribute('callback', 'hit4');
+		sv1.appendChild(evPoint1);
+
+		var evPoint2 = document.createElement('event-point');
+		evPoint2.setAttribute('time', 4);
+		evPoint2.setAttribute('callback', 'hit5');
+		sv2.appendChild(evPoint2);
+
+
+		sv1.addEventListener('mirror', function(event) {
+			console.log("SV1", event.detail);
+			//sv.play();
+		});
+
+		sv2.addEventListener('mirror', function(event) {
+			console.log("SV2", event.detail);
+			//sv.play();
+		});
+
+		/*
+		sv.addEventListener('mirror', function(event) {
+			var mirrorArgs = event.detail;
+			var functionArgs = Array.prototype.slice.call(mirrorArgs);
+			var functionName = functionArgs.shift();
+
+			console.log("MIRROR", functionName, functionArgs, Array.isArray(functionArgs));
+		});
+
+
+		var delay = 1000; // milliseconds
+		var timer = new AccurateTimer(function tick() {
+			alert('tick');
+			this.stop();
+		}, delay);
+
+		timer.start();
+		 */
+
+	</script>
+</div>
+</body>
+</html>
