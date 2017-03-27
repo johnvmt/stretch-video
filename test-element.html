@@ -49,34 +49,17 @@
 		sv2.appendChild(evPoint2);
 
 
-		sv1.addEventListener('mirror', function(event) {
-			console.log("SV1", event.detail);
-			//sv.play();
-		});
-
 		sv2.addEventListener('mirror', function(event) {
-			console.log("SV2", event.detail);
-			//sv.play();
+			console.log("EVENT", event.detail);
+			if(typeof event.detail.tag == 'undefined')
+				sv1[event.detail.function].apply(sv1, event.detail.arguments.concat(['tag-2']));
 		});
 
-		/*
-		sv.addEventListener('mirror', function(event) {
-			var mirrorArgs = event.detail;
-			var functionArgs = Array.prototype.slice.call(mirrorArgs);
-			var functionName = functionArgs.shift();
-
-			console.log("MIRROR", functionName, functionArgs, Array.isArray(functionArgs));
+		sv1.addEventListener('mirror', function(event) {
+			console.log("EVENT", event.detail);
+			if(typeof event.detail.tag == 'undefined')
+				sv2[event.detail.function].apply(sv2, event.detail.arguments.concat(['tag-1']));
 		});
-
-
-		var delay = 1000; // milliseconds
-		var timer = new AccurateTimer(function tick() {
-			alert('tick');
-			this.stop();
-		}, delay);
-
-		timer.start();
-		 */
 
 	</script>
 </div>

@@ -114,17 +114,54 @@
 			});
 		};
 
-		Element.prototype.play = function(mirrorTag) {
+
+		Element.prototype.play = function() {
+			var parsedArgs = this._parseArgs(
+				arguments,
+				[
+					{name: 'time', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'number'); }},
+					{name: 'emitMirror', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'boolean'); }, default: true},
+					{name: 'mirrorTag', level: 1,  validate: function(arg, allArgs) { return true; }, default: undefined}
+				]
+			);
+
+			if(typeof parsedArgs.time == 'number')
+				this.setTime(parsedArgs.time, false);
+
 			var videoElem = this.elements.video;
 			videoElem.play();
-			this.emitMirror(mirrorTag, 'play');
+
+			if(parsedArgs.emitMirror) {
+				var mirrorArgs = [];
+				if(typeof parsedArgs.time == 'number')
+					mirrorArgs.push(parsedArgs.time);
+				this.emitMirror(parsedArgs.mirrorTag, 'play', mirrorArgs);
+			}
 		};
 
-		Element.prototype.pause = function(mirrorTag) {
-			console.log("PAUSE");
+		Element.prototype.pause = function() {
+			var parsedArgs = this._parseArgs(
+				arguments,
+				[
+					{name: 'time', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'number'); }},
+					{name: 'emitMirror', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'boolean'); }, default: true},
+					{name: 'mirrorTag', level: 1,  validate: function(arg, allArgs) { return true; }, default: undefined}
+				]
+			);
+
+			// TODO determine behavior when time is set (should video pause immediately, or run to specified time?)
+			if(typeof parsedArgs.time == 'number')
+				this.setTime(parsedArgs.time, false);
+
 			var videoElem = this.elements.video;
 			videoElem.pause();
-			//this.emitMirror(mirrorTag, 'pause');
+
+			if(parsedArgs.emitMirror) {
+				var mirrorArgs = [];
+				if(typeof parsedArgs.time == 'number')
+					mirrorArgs.push(parsedArgs.time);
+				this.emitMirror(parsedArgs.mirrorTag, 'pause', mirrorArgs);
+			}
 		};
 
 		Element.prototype.reset = function(mirrorTag) {
@@ -133,11 +170,22 @@
 			this.emitMirror(mirrorTag, 'reset');
 		};
 
-		Element.prototype.setTime = function(time, mirrorTag) {
+		Element.prototype.setTime = function() {
 			// TODO should be triggered by setting currentTime attribute
+			var parsedArgs = this._parseArgs(
+				arguments,
+				[
+					{name: 'time', level: 0, validate: function(arg, allArgs) { return (typeof arg == 'number'); }},
+					{name: 'emitMirror', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'boolean'); }, default: true},
+					{name: 'mirrorTag', level: 1,  validate: function(arg, allArgs) { return true; }, default: undefined}
+				]
+			);
+
 			var videoElem = this.elements.video;
 			videoElem.currentTime = time;
-			this.emitMirror(mirrorTag, 'setTime', [time]);
+
+			if(parsedArgs.emitMirror)
+				this.emitMirror(parsedArgs.mirrorTag, 'setTime', [parsedArgs.time]);
 		};
 
 		Element.prototype.seekable = function(time) {
@@ -180,16 +228,11 @@
 
 			videoElem.addEventListener('canplaythrough', function(event) {
 				// play+pause to overcome Chrome bug
-				thisElem.play();
-				thisElem.pause();
+				thisElem.play(false);
+				thisElem.pause(false);
 			});
 
 			videoElem.addEventListener('play', function(event) {
-				// Emit event
-				var emitEvent = document.createEvent('CustomEvent');
-				emitEvent.initCustomEvent('play', true, true, event.detail);
-				thisElem.dispatchEvent(emitEvent);
-
 				thisElem.startMirrorVideo();
 			});
 
@@ -256,7 +299,7 @@
 			else {
 				// Default: pause
 				var eventCallback = function() {
-					thisElem.pause();
+					thisElem.pause(false); // Prevent emitting (mirrored elements will stop by themselves)
 				};
 			}
 
@@ -409,6 +452,79 @@
 			var emitEvent = document.createEvent('CustomEvent');
 			emitEvent.initCustomEvent('mirror', true, true, emitMirrorDetail);
 			this.dispatchEvent(emitEvent);
+		};
+
+
+		Element.prototype._parseArgs = function(argsPassed, argsConfig) {
+			var matched = {};
+
+			function toLevels(argsConfig, level) {
+				if(typeof level !== 'number')
+					level = 0;
+
+				var levelsArr = [];
+
+				argsConfig.forEach(function(argConfig) {
+					if(Array.isArray(argConfig))
+						levelsArr = levelsArr.concat(toLevels(argConfig, level + 1));
+					else {
+						argConfig.level = level;
+						levelsArr.push(argConfig);
+					}
+				});
+
+				return levelsArr;
+			}
+
+			function validArg(argConfig, arg) {
+				return typeof argConfig.validate != 'function' || argConfig.validate(arg)
+			}
+
+			function requiredLeftEnough(argsConfig, minIndex) {
+				for(var index = minIndex; index < argsConfig.length; index++) {
+					if(typeof(argsConfig[index]) === 'undefined' || !argsConfig[index].required)
+						return true;
+				}
+				return false;
+			}
+
+			var argConfigMin = 0;
+
+			if(!Array.isArray(argsPassed))
+				argsPassed = Array.prototype.slice.call(argsPassed);
+
+			argsPassed.forEach(function(arg, index) {
+				for(var ctr = argConfigMin; ctr < argsConfig.length; ctr++) {
+					if(argsConfig[ctr].required) {
+						if(validArg(argsConfig[ctr], arg)) {
+							argsConfig[ctr].matched = true;
+							matched[argsConfig[ctr].name] = arg;
+							argConfigMin++;
+							break;
+						}
+						else
+							throw "missing_required";
+					}
+					else if((!argsConfig[ctr].required && (requiredLeftEnough(argsConfig, ctr) || (argsConfig[ctr].level > argsConfig[ctr - 1].level && argsConfig[ctr - 1].matched))) && validArg(argsConfig[ctr], arg)) {
+						argsConfig[ctr].matched = true;
+						matched[argsConfig[ctr].name] = arg;
+						argConfigMin++;
+						break;
+					}
+					else {
+						argsConfig[ctr].matched = false;
+						argConfigMin++;
+					}
+				}
+			});
+
+			// Add default options, if set
+			argsConfig.forEach(function(argConfig) {
+				if(typeof matched[argConfig.name] == 'undefined' && typeof argConfig.default != 'undefined')
+					matched[argConfig.name] = argConfig.default;
+			});
+
+			return matched;
 		};
 
 		Element.prototype.addObservers = function() {
