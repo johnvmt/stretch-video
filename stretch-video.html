@@ -35,8 +35,9 @@
 	<div id="container" style="width: 100%; height: 100%; background-color: #333333; overflow: hidden">
 		<canvas style="width: 100%; height: 100%;"></canvas>
 		<div id="controls" style="z-index: 1; position: absolute; bottom: 0; left: 0;">
-			<a data-transport="play"><img data-localsrc="images/play.svg" src="images/play.svg" /></a>
-			<a data-transport="pause"><img data-localsrc="images/pause.svg" src="images/pause.svg" /></a>
+			<a data-transport="playPauseToggle"><img data-localsrc="images/play.svg" src="images/play.svg" /></a>
+			<!--<a data-transport="play"><img data-localsrc="images/play.svg" src="images/play.svg" /></a>
+			<a data-transport="pause"><img data-localsrc="images/pause.svg" src="images/pause.svg" /></a>-->
 			<a data-transport="reset"><img data-localsrc="images/refresh.svg" src="images/refresh.svg" /></a>
 			<!--<a data-transport="prevPoint"><img src="./images/previous.svg" /></a>
 			<a data-transport="nextPoint"><img src="./images/next.svg" /></a>-->
@@ -120,6 +121,14 @@
 			});
 		};
 
+		Element.prototype.playPauseToggle = function() {
+			var videoElem = this.elements.video;
+			if(videoElem.paused) // Play
+				this.play();
+			else // Pause
+				this.pause();
+		};
+
 
 		Element.prototype.play = function() {
 			var parsedArgs = this._parseArgs(
@@ -188,7 +197,7 @@
 			);
 
 			var videoElem = this.elements.video;
-			videoElem.currentTime = time;
+			videoElem.currentTime = parsedArgs.time;
 
 			if(parsedArgs.emitMirror)
 				this.emitMirror(parsedArgs.mirrorTag, 'setTime', [parsedArgs.time]);
@@ -239,7 +248,19 @@
 			});
 
 			videoElem.addEventListener('play', function(event) {
+				var remapImg = thisElem.elements.controlsContainer.querySelector('[data-transport="playPauseToggle"] img');
+				remapImg.setAttribute('src', componentDir + '/images/pause.svg');
 				thisElem.startMirrorVideo();
+			});
+
+			videoElem.addEventListener('pause', function(event) {
+				var remapImg = thisElem.elements.controlsContainer.querySelector('[data-transport="playPauseToggle"] img');
+				remapImg.setAttribute('src', componentDir + '/images/play.svg');
+			});
+
+			videoElem.addEventListener('ended', function(event) {
+				var remapImg = thisElem.elements.controlsContainer.querySelector('[data-transport="playPauseToggle"] img');
+				remapImg.setAttribute('src', componentDir + '/images/play.svg');
 			});
 
 			var events = ['play', 'pause', 'ended', 'error', 'timeupdate', 'canplaythrough', 'loadedmetadata'];
