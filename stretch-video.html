@@ -35,9 +35,9 @@
 	<div id="container" style="width: 100%; height: 100%; background-color: #333333; overflow: hidden">
 		<canvas style="background-color: #00ff00; width: 100%; height: 100%;"></canvas>
 		<div id="controls" style="z-index: 1; position: absolute; bottom: 0; left: 0;">
-			<a data-transport="play"><img src="./images/play.svg" /></a>
-			<a data-transport="pause"><img src="./images/pause.svg" /></a>
-			<a data-transport="reset"><img src="./images/refresh.svg" /></a>
+			<a data-transport="play"><img data-localsrc="images/play.svg" src="images/play.svg" /></a>
+			<a data-transport="pause"><img data-localsrc="images/pause.svg" src="images/pause.svg" /></a>
+			<a data-transport="reset"><img data-localsrc="images/refresh.svg" src="images/refresh.svg" /></a>
 			<!--<a data-transport="prevPoint"><img src="./images/previous.svg" /></a>
 			<a data-transport="nextPoint"><img src="./images/next.svg" /></a>-->
 		</div>
@@ -87,6 +87,12 @@
 				videoContainer: thisElem.shadowRoot.querySelector('#container'),
 				canvas: thisElem.shadowRoot.querySelector('#container canvas')
 			};
+
+			// TODO move me
+			var remapImgs = thisElem.elements.controlsContainer.querySelectorAll('[data-localsrc]');
+			objectForEach(remapImgs, function(remapImg) {
+				remapImg.setAttribute('src', componentDir + '/' + remapImg.dataset['localsrc']);
+			});
 
 			thisElem.elements.canvasContext = thisElem.elements.canvas.getContext('2d');
 
@@ -357,7 +363,7 @@
 				_points: {},
 				_pointsIdsTime: {},
 				_started: false,
-					add: function(time, callback) {
+				add: function(time, callback) {
 					time = Number(time);
 					if(typeof this._points[time] == 'undefined')
 						this._points[time] = {};
@@ -550,7 +556,7 @@
 
 		// Called when an attribute of this element is added, removed, or updated
 		Element.prototype.attributeChangedCallback = function(attr, oldVal, newVal) {
-			console.log("attributeChangedCallback");
+			this.elements.video.setAttribute(attr, newVal); // TO filter for video attributes
 		};
 
 		// Called when an attribute in a child element is changed; uses child observer
@@ -660,9 +666,6 @@
 
 		// Add observers to an element
 		function addElementObserver(element, mutations, listener) {
-
-			console.log(element);
-
 			// possible mutations: 	attributes, childList, characterData
 			var observer = new MutationObserver(listener);
 
