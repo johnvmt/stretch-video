@@ -1,6 +1,7 @@
 {
   "name": "stretch-video",
-  "version": "0.0.1",
+  "version": "1.0.0",
+  "description": "A web component that stretches video to fit its container",
   "dependencies": {
   },
   "devDependencies": {

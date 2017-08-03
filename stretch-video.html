@@ -1,5 +1,10 @@
-<template>
+<template is="stretch-video">
 	<style>
+		:host {
+			display: block;
+			height: 100%;
+			width: 100%;
+		}
 		video {
 			display: none;
 		}
@@ -19,10 +24,9 @@
 			background-color: rgba(30, 30, 30, 0.75);
 			box-shadow: 0px 3px 3px rgba(0,0,0, 0.25), inset 0 0 25px rgba(0, 0, 0, 0.3);
 			text-align: center;
-			top: 0px;
+			top: 0;
 			margin: 3px;
 			cursor: pointer;
-
 		}
 
 		a img {
@@ -46,717 +50,705 @@
 </template>
 
 <script>
-	(function(window, document) {
-		// Create references to this file and directory
-		var componentDoc =  (document._currentScript || document.currentScript).ownerDocument;
-		var componentDir = componentDoc.baseURI.substring(0, componentDoc.baseURI.lastIndexOf('/'));
-		var componentFile = componentDoc.baseURI.substring(componentDoc.baseURI.lastIndexOf('/') + 1);
-		var componentName = componentFile.substring(0, componentFile.lastIndexOf('.'));
 
-		// Set default element attributes
-		var elementAttributesDefault = {};
+	(function() {
+		let componentDoc = (document._currentScript || document.currentScript).ownerDocument;
+		let componentDir = componentDoc.baseURI.substring(0, componentDoc.baseURI.lastIndexOf('/'));
+		let componentFile = componentDoc.baseURI.substring(componentDoc.baseURI.lastIndexOf('/') + 1);
+		let componentName = componentFile.substring(0, componentFile.lastIndexOf('.'));
 
-		// Object constructor (but most should go into createdCalledback)
-		function Element() {
+		class StretchVideo extends HTMLElement {
+			constructor() {
+				super(); // Always call super first in constructor
 
-		}
+				// Gets content from <template>
+				let shadow = this.attachShadow({mode: 'open'});
+				let template = componentDoc.querySelector('template[is=stretch-video]').content;
+				shadow.appendChild(document.importNode(template, true));
 
-		// Inherits from HTMLElement
-		Element.prototype = Object.create(HTMLElement.prototype);
+				let thisElem = this;
 
-		// Fires when an instance of the element is created
-		Element.prototype.createdCallback = function() {
-			var thisElem = this;
+				thisElem.eventPoints = thisElem._eventPoints();
+				thisElem.currentTime = 0;
+				thisElem.nextPointTime = null;
+				thisElem.eventPointNodes = {};
 
-			thisElem.eventPoints = thisElem._eventPoints();
-			thisElem.currentTime = 0;
-			thisElem.nextPointTime = null;
-			thisElem.eventPointNodes = {};
+				thisElem._elements = {
+					controlsContainer: shadow.querySelector('#controls'),
+					videoContainer: shadow.querySelector('#container'),
+					canvas: shadow.querySelector('#container canvas')
+				};
 
-			// Creates the shadow root
-			thisElem.shadowRoot = thisElem.createShadowRoot();
+				thisElem._elements.canvasContext = thisElem._elements.canvas.getContext('2d');
 
-			// Adds a template clone into shadow root
-			thisElem.shadowRoot.appendChild(document.importNode(componentDoc.querySelector('template').content, true));
-
-			// get and merge params
-			thisElem.elementAttributes = objectExtend(elementAttributesDefault, thisElem.getAttributes());
-
-			// Get the video container (div)
-			thisElem.elements = {
-				controlsContainer: thisElem.shadowRoot.querySelector('#controls'),
-				videoContainer: thisElem.shadowRoot.querySelector('#container'),
-				canvas: thisElem.shadowRoot.querySelector('#container canvas')
-			};
-
-			// TODO move me
-			var remapImgs = thisElem.elements.controlsContainer.querySelectorAll('[data-localsrc]');
-			objectForEach(remapImgs, function(remapImg) {
-				remapImg.setAttribute('src', componentDir + '/' + remapImg.dataset['localsrc']);
-			});
-
-			thisElem.elements.canvasContext = thisElem.elements.canvas.getContext('2d');
-
-			// Add the video to the container
-			thisElem.addVideo(thisElem.elementAttributes, thisElem.elements.videoContainer);
-
-			thisElem.addButtonsEventListeners(thisElem.elements.controlsContainer, ['[data-transport]']);
-
-			thisElem.config = {
-				eventPointNodeName: 'event-point'
-			};
-
-			var childElems = objectExtend({}, thisElem.children);
-			objectForEach(childElems, function(child) {
-				if(child['localName'] == thisElem.config.eventPointNodeName)
-					thisElem.addEventPointNode(child); // TODO
-			});
-
-			// Set up observer on children and character data. Remove if not needed
-			thisElem.addObservers();
-
-			// Triggered when the window is resized
-			window.addEventListener('resize', function() {
-
-			});
-		};
-
-		Element.prototype.playPauseToggle = function() {
-			var videoElem = this.elements.video;
-			if(videoElem.paused) // Play
-				this.play();
-			else // Pause
-				this.pause();
-		};
-
-
-		Element.prototype.play = function() {
-			var parsedArgs = this._parseArgs(
-				arguments,
-				[
-					{name: 'time', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'number'); }},
-					{name: 'emitMirror', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'boolean'); }, default: true},
-					{name: 'mirrorTag', level: 1,  validate: function(arg, allArgs) { return true; }, default: undefined}
-				]
-			);
-
-			if(typeof parsedArgs.time == 'number')
-				this.setTime(parsedArgs.time, false);
-
-			var videoElem = this.elements.video;
-			videoElem.play();
-
-			if(parsedArgs.emitMirror) {
-				var mirrorArgs = [];
-				if(typeof parsedArgs.time == 'number')
-					mirrorArgs.push(parsedArgs.time);
-				this.emitMirror(parsedArgs.mirrorTag, 'play', mirrorArgs);
-			}
-		};
-
-		Element.prototype.pause = function() {
-			var parsedArgs = this._parseArgs(
-				arguments,
-				[
-					{name: 'time', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'number'); }},
-					{name: 'emitMirror', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'boolean'); }, default: true},
-					{name: 'mirrorTag', level: 1,  validate: function(arg, allArgs) { return true; }, default: undefined}
-				]
-			);
-
-			// TODO determine behavior when time is set (should video pause immediately, or run to specified time?)
-			if(typeof parsedArgs.time == 'number')
-				this.setTime(parsedArgs.time, false);
-
-			var videoElem = this.elements.video;
-			videoElem.pause();
-
-			if(parsedArgs.emitMirror) {
-				var mirrorArgs = [];
-				if(typeof parsedArgs.time == 'number')
-					mirrorArgs.push(parsedArgs.time);
-				this.emitMirror(parsedArgs.mirrorTag, 'pause', mirrorArgs);
-			}
-		};
-
-		Element.prototype.reset = function(mirrorTag) {
-			// TODO add ability to set non-0 start times
-			this.setTime(0);
-			this.emitMirror(mirrorTag, 'reset');
-		};
-
-		Element.prototype.setTime = function() {
-			// TODO should be triggered by setting currentTime attribute
-			var parsedArgs = this._parseArgs(
-				arguments,
-				[
-					{name: 'time', level: 0, validate: function(arg, allArgs) { return (typeof arg == 'number'); }},
-					{name: 'emitMirror', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'boolean'); }, default: true},
-					{name: 'mirrorTag', level: 1,  validate: function(arg, allArgs) { return true; }, default: undefined}
-				]
-			);
-
-			var videoElem = this.elements.video;
-			videoElem.currentTime = parsedArgs.time;
-
-			if(parsedArgs.emitMirror)
-				this.emitMirror(parsedArgs.mirrorTag, 'setTime', [parsedArgs.time]);
-		};
-
-		Element.prototype.seekable = function(time) {
-			var videoElem = this.elements.video;
-			for(var seekIndex = 0; seekIndex < videoElem.seekable.length; seekIndex++) {
-				if(videoElem.currentTime > videoElem.seekable.start(seekIndex) && videoElem.currentTime < videoElem.seekable.end(seekIndex))
-					return true;
-			}
-			return false;
-		};
-
-		Element.prototype.resize = function() {
-			console.log('resize');
-			var videoContainer = this.elements.videoContainer;
-			var videoElem = this.elements.video;
-			var canvasElem = this.elements.canvas;
-
-			canvasElem.width = videoElem.videoWidth;
-			canvasElem.height = videoElem.videoHeight;
-		};
-
-		Element.prototype.addVideo = function(videoAttributes, videoContainer) {
-			var thisElem = this;
-
-			// create the <video> tag
-			var videoElem = document.createElement('video');
-
-			thisElem.elements.video = videoElem;
-
-			// copy attributes to <video>
-			for(var attributeKey in videoAttributes) {
-				if(videoAttributes.hasOwnProperty(attributeKey))
-					videoElem[attributeKey] = videoAttributes[attributeKey];
-			}
-
-			// resize the video once the video's metadata (size) is loaded
-			videoElem.addEventListener('loadedmetadata', function(event) {
-				thisElem.resize();
-			});
-
-			videoElem.addEventListener('canplaythrough', function(event) {
-				// play+pause to overcome Chrome bug
-				thisElem.play(false);
-				thisElem.pause(false);
-			});
-
-			videoElem.addEventListener('play', function(event) {
-				var remapImg = thisElem.elements.controlsContainer.querySelector('[data-transport="playPauseToggle"] img');
-				remapImg.setAttribute('src', componentDir + '/images/pause.svg');
-				thisElem.startMirrorVideo();
-			});
-
-			videoElem.addEventListener('pause', function(event) {
-				var remapImg = thisElem.elements.controlsContainer.querySelector('[data-transport="playPauseToggle"] img');
-				remapImg.setAttribute('src', componentDir + '/images/play.svg');
-			});
-
-			videoElem.addEventListener('ended', function(event) {
-				var remapImg = thisElem.elements.controlsContainer.querySelector('[data-transport="playPauseToggle"] img');
-				remapImg.setAttribute('src', componentDir + '/images/play.svg');
-			});
-
-			var events = ['play', 'pause', 'ended', 'error', 'timeupdate', 'canplaythrough', 'loadedmetadata'];
-			events.forEach(function(eventName) {
-				videoElem.addEventListener(eventName, function(event) {
-					var emitEvent = document.createEvent('CustomEvent');
-					emitEvent.initCustomEvent(eventName, true, true, event.detail);
-					thisElem.dispatchEvent(emitEvent);
-				});
-			});
-
-			// add the <video> to the <div>
-			videoContainer.appendChild(videoElem);
-		};
-
-		Element.prototype.startMirrorVideo = function() {
-			var thisElem = this;
-			var videoElem = thisElem.elements.video;
-			var canvasContext = thisElem.elements.canvasContext;
-			mirrorVideo();
-
-			function mirrorVideo() {
-				canvasContext.drawImage(videoElem, 0, 0, videoElem.videoWidth, videoElem.videoHeight);
-				thisElem.updateTime(videoElem.currentTime);
-
-				if(!videoElem.paused && !videoElem.ended)
-					window.requestAnimationFrame(mirrorVideo);
-			}
-		};
-
-		Element.prototype.updateTime = function(videoTime) {
-			var thisElem = this;
-			thisElem.currentTime = videoTime;
-
-			if(thisElem.nextPointTime !== null && thisElem.nextPointTime <= videoTime) {
-				thisElem.eventPoints.runPoint(thisElem.nextPointTime);
-				thisElem.nextPointTime = thisElem.eventPoints.nextTimeAfter(thisElem.nextPointTime);
-			}
-		};
-
-		Element.prototype.addEventPoint = function(time, callback) {
-			var eventPointId = this.eventPoints.add(time, callback);
-			this.nextPointTime = this.eventPoints.nextTimeAfter(this.currentTime);
-			return eventPointId;
-		};
-
-		Element.prototype.addEventPointNode = function(eventPointNode) {
-			var thisElem = this;
-			var eventPointAttributes = thisElem.getAttributes(eventPointNode);
-			var eventPointTime = Number(eventPointAttributes.time);
-
-			if(typeof eventPointAttributes.callback != 'undefined') {
-				if(typeof eventPointAttributes.callback == 'string') {
-					var eventCallback = function () {
-						window[eventPointAttributes.callback]();
-					}
-				}
-				else if(typeof eventPointAttributes.callback == 'function')
-					var eventCallback = eventPointAttributes.callback;
-				else
-					throw new Error('function_not_found');
-			}
-			else {
-				// Default: pause
-				var eventCallback = function() {
-					thisElem.pause(false); // Prevent emitting (mirrored elements will stop by themselves)
+				thisElem.config = {
+					eventPointNodeName: 'event-point'
 				};
 			}
 
-			var eventPointId = thisElem.addEventPoint(eventPointTime, eventCallback);
-			thisElem.eventPointNodes[eventPointId] = eventPointNode;
-		};
+			connectedCallback() {
+				let thisElem = this;
 
-		Element.prototype.removeEventPoint = function(eventPointId) {
-			var removeResult = this.eventPoints.remove(eventPointId);
-			this.nextPointTime = this.eventPoints.nextTimeAfter(this.currentTime);
-			return removeResult;
-		};
-
-		Element.prototype.removeEventPointNode = function(eventPointNodeRemove) {
-			var thisElem = this;
-			objectForEach(thisElem.eventPointNodes, function(eventPointId, eventPointNode) {
-				if(eventPointNodeRemove == eventPointNode) {
-					thisElem.removeEventPoint(eventPointId);
-					delete thisElem.eventPointNodes[eventPointId];
-				}
-			});
-		};
-
-		Element.prototype.addButtonsEventListeners = function(contentContainer, buttonSelector) {
-			var events = ['click'];
-
-			var thisElem = this;
-
-			// Get the elements we'll add the handlers to
-			var eventElements = contentContainer.querySelectorAll(buttonSelector);
-
-			for (var resultIndex = 0; resultIndex < eventElements.length; resultIndex++) {
-				// Create a closure for elementFunction
-				(function(){
-					// Get the function this element is supposed to trigger
-					var elementFunction = eventElements[resultIndex].getAttribute('data-transport');
-
-					// Check the function actually exists
-					if(typeof thisElem[elementFunction] == 'function') {
-						var callback = function(event) {
-							event.stopPropagation();
-							thisElem[elementFunction]();
-						};
-
-						addElementEventListener(eventElements[resultIndex], events, callback);
-					}
-					else
-						console.error(elementFunction, "not found");
-				})();
-			}
-		};
-
-		Element.prototype._eventPoints = function() {
-			return {
-				_points: {},
-				_pointsIdsTime: {},
-				_started: false,
-				add: function(time, callback) {
-					time = Number(time);
-					if(typeof this._points[time] == 'undefined')
-						this._points[time] = {};
-
-					var eventPointId = this._uniqueId();
-					this._points[time][eventPointId] = callback;
-					this._pointsIdsTime[eventPointId] = time;
-					return eventPointId;
-				},
-				remove: function(eventPointId) {
-					if(typeof this._pointsIdsTime[eventPointId] != 'undefined') {
-						var eventTime = this._pointsIdsTime[eventPointId];
-						if(this._points[eventTime] != 'undefined' && this._points[eventTime][eventPointId] != 'undefined') {
-							delete this._pointsIdsTime[eventPointId];
-							delete this._points[eventTime][eventPointId];
-							return true;
-						}
-					}
-					return false;
-				},
-				stop: function() {
-					this._started = false;
-				},
-				runPoint: function(time) {
-					time = Number(time);
-					if(time in this._points) {
-						for(var eventPointId in this._points[time]) { // pull keys before looping through?
-							if (this._points[time].hasOwnProperty(eventPointId))
-								this._points[time][eventPointId]();
-						}
-					}
-				},
-				nextTime: function(timeNow) {
-					timeNow = Number(timeNow);
-					var maxTime = null;
-					for(var time in this._points) { // pull keys before looping through?
-						if(this._points.hasOwnProperty(time) && time >= timeNow && (maxTime === null || time < maxTime))
-							maxTime = time;
-					}
-					return maxTime;
-				},
-				nextTimeAfter: function(timeNow) {
-					timeNow = Number(timeNow);
-					var maxTime = null;
-					for(var time in this._points) { // pull keys before looping through?
-						if(this._points.hasOwnProperty(time) && time > timeNow && (maxTime === null || time < maxTime))
-							maxTime = time;
-					}
-					return maxTime;
-				},
-				prevTime: function(timeNow) {
-					timeNow = Number(timeNow);
-					var minTime = null;
-					for(var time in this._points) { // pull keys before looping through?
-						if(this._points.hasOwnProperty(time) && time <= timeNow && (minTime === null || time > minTime))
-							minTime = time;
-					}
-					return minTime;
-				},
-				prevTimeBefore: function(timeNow) {
-					timeNow = Number(timeNow);
-					var minTime = null;
-					for(var time in this._points) { // pull keys before looping through?
-						if(this._points.hasOwnProperty(time) && time < timeNow && (minTime === null || time > minTime))
-							minTime = time;
-					}
-					return minTime;
-				},
-				removeAll: function() {
-					this._points = {};
-				},
-				_uniqueId: function() {
-					function s4() {
-						return Math.floor((1 + Math.random()) * 0x10000)
-							.toString(16)
-							.substring(1);
-					}
-					return s4() + s4() + '-' + s4() + '-' + s4() + '-' +
-						s4() + '-' + s4() + s4() + s4();
-				}
-			};
-		};
-
-		Element.prototype.emitMirror = function(mirrorTag, functionName, functionArgs) {
-			if(typeof functionArgs == 'undefined')
-				functionArgs = [];
-
-			var emitMirrorDetail = {function: functionName, arguments: Array.prototype.slice.call(functionArgs)};
-			if(typeof mirrorTag != 'undefined')
-				emitMirrorDetail.tag = mirrorTag;
-
-			var emitEvent = document.createEvent('CustomEvent');
-			emitEvent.initCustomEvent('mirror', true, true, emitMirrorDetail);
-			this.dispatchEvent(emitEvent);
-		};
-
-
-		Element.prototype._parseArgs = function(argsPassed, argsConfig) {
-			var matched = {};
-
-			function toLevels(argsConfig, level) {
-				if(typeof level !== 'number')
-					level = 0;
-
-				var levelsArr = [];
-
-				argsConfig.forEach(function(argConfig) {
-					if(Array.isArray(argConfig))
-						levelsArr = levelsArr.concat(toLevels(argConfig, level + 1));
-					else {
-						argConfig.level = level;
-						levelsArr.push(argConfig);
-					}
+				// TODO move me
+				let remapImgs = thisElem._elements.controlsContainer.querySelectorAll('[data-localsrc]');
+				thisElem._objectForEach(remapImgs, function(remapImg) {
+					remapImg.setAttribute('src', componentDir + '/' + remapImg.dataset['localsrc']);
 				});
 
-				return levelsArr;
+				// Add the video to the container with attributes set on <stretch-video>
+				thisElem.addVideo(thisElem.getAttributes(), thisElem._elements.videoContainer);
+
+				thisElem.addButtonsEventListeners(thisElem._elements.controlsContainer, ['[data-transport]']);
+
+				let childElems = thisElem._objectExtend({}, thisElem.children);
+				thisElem._objectForEach(childElems, function(child) {
+					if(child['localName'] == thisElem.config.eventPointNodeName)
+						thisElem.addEventPointNode(child); // TODO
+				});
+
+				// Set up observer on children and character data. Remove if not needed
+				thisElem._addObservers();
 			}
 
-			function validArg(argConfig, arg) {
-				return typeof argConfig.validate != 'function' || argConfig.validate(arg)
+			playPauseToggle() {
+				let videoElem = this._elements.video;
+				if(videoElem.paused) // Play
+					this.play();
+				else // Pause
+					this.pause();
 			}
 
-			function requiredLeftEnough(argsConfig, minIndex) {
-				for(var index = minIndex; index < argsConfig.length; index++) {
-					if(typeof(argsConfig[index]) === 'undefined' || !argsConfig[index].required)
+			play() {
+				let parsedArgs = this._parseArgs(
+					arguments,
+					[
+						{name: 'time', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'number'); }},
+						{name: 'emitMirror', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'boolean'); }, default: true},
+						{name: 'mirrorTag', level: 1,  validate: function(arg, allArgs) { return true; }, default: undefined}
+					]
+				);
+
+				if(typeof parsedArgs.time == 'number')
+					this.setTime(parsedArgs.time, false);
+
+				let videoElem = this._elements.video;
+				videoElem.play();
+
+				if(parsedArgs.emitMirror) {
+					let mirrorArgs = [];
+					if(typeof parsedArgs.time == 'number')
+						mirrorArgs.push(parsedArgs.time);
+					this.emitMirror(parsedArgs.mirrorTag, 'play', mirrorArgs);
+				}
+			}
+
+			pause() {
+				let parsedArgs = this._parseArgs(
+					arguments,
+					[
+						{name: 'time', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'number'); }},
+						{name: 'emitMirror', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'boolean'); }, default: true},
+						{name: 'mirrorTag', level: 1,  validate: function(arg, allArgs) { return true; }, default: undefined}
+					]
+				);
+
+				// TODO determine behavior when time is set (should video pause immediately, or run to specified time?)
+				if(typeof parsedArgs.time == 'number')
+					this.setTime(parsedArgs.time, false);
+
+				let videoElem = this._elements.video;
+				videoElem.pause();
+
+				if(parsedArgs.emitMirror) {
+					var mirrorArgs = [];
+					if(typeof parsedArgs.time == 'number')
+						mirrorArgs.push(parsedArgs.time);
+					this.emitMirror(parsedArgs.mirrorTag, 'pause', mirrorArgs);
+				}
+			}
+
+			reset(mirrorTag) {
+				// TODO add ability to set non-0 start times
+				this.setTime(0);
+				//this.play(false);
+				//this.pause(false);
+				this.emitMirror(mirrorTag, 'reset');
+			}
+
+			setTime() {
+				// TODO should be triggered by setting currentTime attribute
+				let parsedArgs = this._parseArgs(
+					arguments,
+					[
+						{name: 'time', level: 0, validate: function(arg, allArgs) { return (typeof arg == 'number'); }},
+						{name: 'emitMirror', level: 1, validate: function(arg, allArgs) { return (typeof arg == 'boolean'); }, default: true},
+						{name: 'mirrorTag', level: 1,  validate: function(arg, allArgs) { return true; }, default: undefined}
+					]
+				);
+
+				let videoElem = this._elements.video;
+				videoElem.currentTime = parsedArgs.time;
+
+				if(parsedArgs.emitMirror)
+					this.emitMirror(parsedArgs.mirrorTag, 'setTime', [parsedArgs.time]);
+			}
+
+			seekable(time) {
+				let videoElem = this._elements.video;
+				for(let seekIndex = 0; seekIndex < videoElem.seekable.length; seekIndex++) {
+					if(videoElem.currentTime > videoElem.seekable.start(seekIndex) && videoElem.currentTime < videoElem.seekable.end(seekIndex))
 						return true;
 				}
 				return false;
+			};
+
+			resize() {
+				let videoContainer = this._elements.videoContainer;
+				let videoElem = this._elements.video;
+				let canvasElem = this._elements.canvas;
+
+				canvasElem.width = videoElem.videoWidth;
+				canvasElem.height = videoElem.videoHeight;
 			}
 
-			var argConfigMin = 0;
+			addVideo(videoAttributes, videoContainer) {
+				let thisElem = this;
 
-			if(!Array.isArray(argsPassed))
-				argsPassed = Array.prototype.slice.call(argsPassed);
+				// create the <video> tag
+				let videoElem = document.createElement('video');
 
-			argsPassed.forEach(function(arg, index) {
-				for(var ctr = argConfigMin; ctr < argsConfig.length; ctr++) {
-					if(argsConfig[ctr].required) {
-						if(validArg(argsConfig[ctr], arg)) {
+				thisElem._elements.video = videoElem;
+
+				// copy attributes to <video>
+				for(let attributeKey in videoAttributes) {
+					if(videoAttributes.hasOwnProperty(attributeKey))
+						videoElem[attributeKey] = videoAttributes[attributeKey];
+				}
+
+				// resize the video once the video's metadata (size) is loaded
+				videoElem.addEventListener('loadedmetadata', function(event) {
+					thisElem.resize();
+				});
+
+				videoElem.addEventListener('canplaythrough', function(event) {
+					// play+pause to overcome Chrome bug
+					thisElem.play(false);
+					thisElem.pause(false);
+				});
+
+				videoElem.addEventListener('play', function(event) {
+					let remapImg = thisElem._elements.controlsContainer.querySelector('[data-transport="playPauseToggle"] img');
+					remapImg.setAttribute('src', componentDir + '/images/pause.svg');
+					thisElem.startMirrorVideo();
+				});
+
+				videoElem.addEventListener('pause', function(event) {
+					let remapImg = thisElem._elements.controlsContainer.querySelector('[data-transport="playPauseToggle"] img');
+					remapImg.setAttribute('src', componentDir + '/images/play.svg');
+				});
+
+				videoElem.addEventListener('ended', function(event) {
+					let remapImg = thisElem._elements.controlsContainer.querySelector('[data-transport="playPauseToggle"] img');
+					remapImg.setAttribute('src', componentDir + '/images/play.svg');
+				});
+
+				videoElem.addEventListener('timeupdate', function(event) {
+					thisElem.startMirrorVideo();
+				});
+
+				let events = ['play', 'pause', 'ended', 'error', 'timeupdate', 'canplaythrough', 'loadedmetadata'];
+				events.forEach(function(eventName) {
+					videoElem.addEventListener(eventName, function(event) {
+						let emitEvent = document.createEvent('CustomEvent');
+						emitEvent.initCustomEvent(eventName, true, true, event.detail);
+						thisElem.dispatchEvent(emitEvent);
+					});
+				});
+
+				// add the <video> to the <div>
+				videoContainer.appendChild(videoElem);
+			}
+
+			startMirrorVideo() {
+				let thisElem = this;
+				let videoElem = thisElem._elements.video;
+				thisElem.mirrorVideo();
+
+				if(!videoElem.paused && !videoElem.ended) {
+					window.requestAnimationFrame(function() {
+						thisElem.startMirrorVideo();
+					});
+				}
+			}
+
+			mirrorVideo() {
+				let thisElem = this;
+				let videoElem = thisElem._elements.video;
+				let canvasContext = thisElem._elements.canvasContext;
+
+				canvasContext.drawImage(videoElem, 0, 0, videoElem.videoWidth, videoElem.videoHeight);
+				thisElem.updateTime(videoElem.currentTime);
+
+			}
+
+			updateTime(videoTime) {
+				let thisElem = this;
+				thisElem.currentTime = videoTime;
+
+				if(thisElem.nextPointTime !== null && thisElem.nextPointTime <= videoTime) {
+					thisElem.eventPoints.runPoint(thisElem.nextPointTime);
+					thisElem.nextPointTime = thisElem.eventPoints.nextTimeAfter(thisElem.nextPointTime);
+				}
+			}
+
+			addEventPoint(time, callback) {
+				let eventPointId = this.eventPoints.add(time, callback);
+				this.nextPointTime = this.eventPoints.nextTimeAfter(this.currentTime);
+				return eventPointId;
+			}
+
+			addEventPointNode(eventPointNode) {
+				let thisElem = this;
+				let eventPointAttributes = thisElem.getAttributes(eventPointNode);
+				let eventPointTime = Number(eventPointAttributes.time);
+
+				if(typeof eventPointAttributes.callback != 'undefined') {
+					if(typeof eventPointAttributes.callback == 'string') {
+						var eventCallback = function () {
+							window[eventPointAttributes.callback]();
+						}
+					}
+					else if(typeof eventPointAttributes.callback == 'function') {
+						let eventCallback = eventPointAttributes.callback;
+					}
+					else
+						throw new Error('function_not_found');
+				}
+				else {
+					// Default: pause
+					let eventCallback = function() {
+						thisElem.pause(false); // Prevent emitting (mirrored elements will stop by themselves)
+					};
+				}
+
+				let eventPointId = thisElem.addEventPoint(eventPointTime, eventCallback);
+				thisElem.eventPointNodes[eventPointId] = eventPointNode;
+			}
+
+			removeEventPoint(eventPointId) {
+				let removeResult = this.eventPoints.remove(eventPointId);
+				this.nextPointTime = this.eventPoints.nextTimeAfter(this.currentTime);
+				return removeResult;
+			}
+
+			removeEventPointNode(eventPointNodeRemove) {
+				let thisElem = this;
+				objectForEach(thisElem.eventPointNodes, function(eventPointId, eventPointNode) {
+					if(eventPointNodeRemove == eventPointNode) {
+						thisElem.removeEventPoint(eventPointId);
+						delete thisElem.eventPointNodes[eventPointId];
+					}
+				});
+			}
+
+			addButtonsEventListeners(contentContainer, buttonSelector) {
+				let events = ['click'];
+
+				let thisElem = this;
+
+				// Get the elements we'll add the handlers to
+				let eventElements = contentContainer.querySelectorAll(buttonSelector);
+
+				for (let resultIndex = 0; resultIndex < eventElements.length; resultIndex++) {
+					// Create a closure for elementFunction
+					(function(){
+						// Get the function this element is supposed to trigger
+						let elementFunction = eventElements[resultIndex].getAttribute('data-transport');
+
+						// Check the function actually exists
+						if(typeof thisElem[elementFunction] == 'function') {
+							let callback = function(event) {
+								event.stopPropagation();
+								thisElem[elementFunction]();
+							};
+
+							thisElem._addElementEventListener(eventElements[resultIndex], events, callback);
+						}
+						else
+							console.error(elementFunction, "not found");
+					})();
+				}
+			};
+
+			_eventPoints() {
+				return {
+					_points: {},
+					_pointsIdsTime: {},
+					_started: false,
+					add: function(time, callback) {
+						time = Number(time);
+						if(typeof this._points[time] == 'undefined')
+							this._points[time] = {};
+
+						let eventPointId = this._uniqueId();
+						this._points[time][eventPointId] = callback;
+						this._pointsIdsTime[eventPointId] = time;
+						return eventPointId;
+					},
+					remove: function(eventPointId) {
+						if(typeof this._pointsIdsTime[eventPointId] != 'undefined') {
+							let eventTime = this._pointsIdsTime[eventPointId];
+							if(this._points[eventTime] != 'undefined' && this._points[eventTime][eventPointId] != 'undefined') {
+								delete this._pointsIdsTime[eventPointId];
+								delete this._points[eventTime][eventPointId];
+								return true;
+							}
+						}
+						return false;
+					},
+					stop: function() {
+						this._started = false;
+					},
+					runPoint: function(time) {
+						time = Number(time);
+						if(time in this._points) {
+							for(let eventPointId in this._points[time]) { // pull keys before looping through?
+								if (this._points[time].hasOwnProperty(eventPointId))
+									this._points[time][eventPointId]();
+							}
+						}
+					},
+					nextTime: function(timeNow) {
+						timeNow = Number(timeNow);
+						let maxTime = null;
+						for(let time in this._points) { // pull keys before looping through?
+							if(this._points.hasOwnProperty(time) && time >= timeNow && (maxTime === null || time < maxTime))
+								maxTime = time;
+						}
+						return maxTime;
+					},
+					nextTimeAfter: function(timeNow) {
+						timeNow = Number(timeNow);
+						let maxTime = null;
+						for(let time in this._points) { // pull keys before looping through?
+							if(this._points.hasOwnProperty(time) && time > timeNow && (maxTime === null || time < maxTime))
+								maxTime = time;
+						}
+						return maxTime;
+					},
+					prevTime: function(timeNow) {
+						timeNow = Number(timeNow);
+						let minTime = null;
+						for(let time in this._points) { // pull keys before looping through?
+							if(this._points.hasOwnProperty(time) && time <= timeNow && (minTime === null || time > minTime))
+								minTime = time;
+						}
+						return minTime;
+					},
+					prevTimeBefore: function(timeNow) {
+						timeNow = Number(timeNow);
+						let minTime = null;
+						for(let time in this._points) { // pull keys before looping through?
+							if(this._points.hasOwnProperty(time) && time < timeNow && (minTime === null || time > minTime))
+								minTime = time;
+						}
+						return minTime;
+					},
+					removeAll: function() {
+						this._points = {};
+					},
+					_uniqueId: function() {
+						function s4() {
+							return Math.floor((1 + Math.random()) * 0x10000)
+								.toString(16)
+								.substring(1);
+						}
+						return s4() + s4() + '-' + s4() + '-' + s4() + '-' +
+							s4() + '-' + s4() + s4() + s4();
+					}
+				};
+			};
+
+			emitMirror(mirrorTag, functionName, functionArgs) {
+				if(typeof functionArgs == 'undefined')
+					functionArgs = [];
+
+				let emitMirrorDetail = {function: functionName, arguments: Array.prototype.slice.call(functionArgs)};
+				if(typeof mirrorTag != 'undefined')
+					emitMirrorDetail.tag = mirrorTag;
+
+				let emitEvent = document.createEvent('CustomEvent');
+				emitEvent.initCustomEvent('mirror', true, true, emitMirrorDetail);
+				this.dispatchEvent(emitEvent);
+			}
+
+
+			_parseArgs(argsPassed, argsConfig) {
+				let matched = {};
+
+				function toLevels(argsConfig, level) {
+					if(typeof level !== 'number')
+						level = 0;
+
+					let levelsArr = [];
+
+					argsConfig.forEach(function(argConfig) {
+						if(Array.isArray(argConfig))
+							levelsArr = levelsArr.concat(toLevels(argConfig, level + 1));
+						else {
+							argConfig.level = level;
+							levelsArr.push(argConfig);
+						}
+					});
+
+					return levelsArr;
+				}
+
+				function validArg(argConfig, arg) {
+					return typeof argConfig.validate != 'function' || argConfig.validate(arg)
+				}
+
+				function requiredLeftEnough(argsConfig, minIndex) {
+					for(let index = minIndex; index < argsConfig.length; index++) {
+						if(typeof(argsConfig[index]) === 'undefined' || !argsConfig[index].required)
+							return true;
+					}
+					return false;
+				}
+
+				let argConfigMin = 0;
+
+				if(!Array.isArray(argsPassed))
+					argsPassed = Array.prototype.slice.call(argsPassed);
+
+				argsPassed.forEach(function(arg, index) {
+					for(let ctr = argConfigMin; ctr < argsConfig.length; ctr++) {
+						if(argsConfig[ctr].required) {
+							if(validArg(argsConfig[ctr], arg)) {
+								argsConfig[ctr].matched = true;
+								matched[argsConfig[ctr].name] = arg;
+								argConfigMin++;
+								break;
+							}
+							else
+								throw "missing_required";
+						}
+						else if((!argsConfig[ctr].required && (requiredLeftEnough(argsConfig, ctr) || (argsConfig[ctr].level > argsConfig[ctr - 1].level && argsConfig[ctr - 1].matched))) && validArg(argsConfig[ctr], arg)) {
 							argsConfig[ctr].matched = true;
 							matched[argsConfig[ctr].name] = arg;
 							argConfigMin++;
 							break;
 						}
-						else
-							throw "missing_required";
+						else {
+							argsConfig[ctr].matched = false;
+							argConfigMin++;
+						}
 					}
-					else if((!argsConfig[ctr].required && (requiredLeftEnough(argsConfig, ctr) || (argsConfig[ctr].level > argsConfig[ctr - 1].level && argsConfig[ctr - 1].matched))) && validArg(argsConfig[ctr], arg)) {
-						argsConfig[ctr].matched = true;
-						matched[argsConfig[ctr].name] = arg;
-						argConfigMin++;
-						break;
-					}
-					else {
-						argsConfig[ctr].matched = false;
-						argConfigMin++;
-					}
-				}
-			});
-
-			// Add default options, if set
-			argsConfig.forEach(function(argConfig) {
-				if(typeof matched[argConfig.name] == 'undefined' && typeof argConfig.default != 'undefined')
-					matched[argConfig.name] = argConfig.default;
-			});
-
-			return matched;
-		};
-
-		Element.prototype.addObservers = function() {
-			var thisElem = this;
-			thisElem.removeObservers(); // Disconnect any observers already added
-
-			thisElem.observer = addElementObserver(thisElem, ['childList', 'characterData', 'subtree', 'attributeOldValue'], function(mutationRecords) {
-				mutationRecords.forEach(function(mutationRecord) {
-					// Ignore changes to thisElem attributes, as these are handled by attributeChangedCallback
-					if(mutationRecord.target !== thisElem || mutationRecord.type !== 'attributes')
-						thisElem.childMutatedCallback(thisElem, mutationRecord);
 				});
-			});
-		};
 
-		Element.prototype.removeObservers = function() {
-			if(typeof this.observer != 'undefined')
-				this.observer.disconnect();
+				// Add default options, if set
+				argsConfig.forEach(function(argConfig) {
+					if(typeof matched[argConfig.name] == 'undefined' && typeof argConfig.default != 'undefined')
+						matched[argConfig.name] = argConfig.default;
+				});
 
-			if(typeof this.contentObserver != 'undefined')
-				this.contentObserver.disconnect();
-		};
+				return matched;
+			};
 
-		// Called when an attribute of this element is added, removed, or updated
-		Element.prototype.attributeChangedCallback = function(attr, oldVal, newVal) {
-			this.elements.video.setAttribute(attr, newVal); // TO filter for video attributes
-		};
+			_addObservers() {
+				let thisElem = this;
+				thisElem._removeObservers(); // Disconnect any observers already added
 
-		// Called when an attribute in a child element is changed; uses child observer
-		Element.prototype.childAttributeChangedCallback = function(target, attr, oldVal, newVal) {
-			console.log("childAttributeChangedCallback")
-		};
-
-		// Called when a child element is added; uses child observer
-		Element.prototype.childAddedCallback = function(child) {
-			if(child['localName'] == this.config.eventPointNodeName)
-				this.addEventPointNode(child);
-		};
-
-		// Called when a child element is removed; uses child observer
-		Element.prototype.childRemovedCallback = function(child) {
-			if(child['localName'] == this.config.eventPointNodeName)
-				this.removeEventPointNode(child);
-		};
-
-		// Called when a child element (child) is added to a child of this (target); uses child observer
-		Element.prototype.descendantAddedCallback = function(target, child) {
-			console.log("descendantAddedCallback")
-		};
-
-		// alled when a descendant element (child) is removed from a child of this (target); uses child observer
-		Element.prototype.descendantRemovedCallback = function(target, child) {
-			console.log("descendantRemovedCallback")
-		};
-
-		// Called when element's innerHtml is changed; uses child observer
-		Element.prototype.characterDataChangedCallback = function(newData) {
-			console.log("characterDataChangedCallback")
-		};
-
-		// Called when a child element is changed; uses child observer
-		Element.prototype.childMutatedCallback = function(targetNode, mutationRecord) {
-			switch(mutationRecord.type) {
-				case "childList":
-					if(mutationRecord.target === targetNode) { // Direct descendant
-						for(var ctr = 0; ctr < mutationRecord.addedNodes.length; ctr++)
-							this.childAddedCallback(mutationRecord.addedNodes[ctr]);
-						for(ctr = 0; ctr < mutationRecord.removedNodes.length; ctr++)
-							this.childRemovedCallback(mutationRecord.removedNodes[ctr]);
-					}
-					else {
-						for(var ctr = 0; ctr < mutationRecord.addedNodes.length; ctr++)
-							this.descendantAddedCallback(mutationRecord.target, mutationRecord.addedNodes[ctr]);
-						for(ctr = 0; ctr < mutationRecord.removedNodes.length; ctr++)
-							this.descendantRemovedCallback(mutationRecord.target, mutationRecord.addedNodes[ctr]);
-					}
-					break;
-				case "attributes":
-					this.childAttributeChangedCallback(mutationRecord.target, mutationRecord.attributeName, mutationRecord.oldValue, this.getAttribute(mutationRecord.attributeName, mutationRecord.target));
-					break;
-				case "characterData":
-					this.characterDataChangedCallback(mutationRecord.target.data);
-					break;
+				thisElem.observer = thisElem._addElementObserver(thisElem, ['childList', 'characterData', 'subtree', 'attributeOldValue'], function(mutationRecords) {
+					mutationRecords.forEach(function(mutationRecord) {
+						// Ignore changes to thisElem attributes, as these are handled by attributeChangedCallback
+						if(mutationRecord.target !== thisElem || mutationRecord.type !== 'attributes')
+							thisElem.childMutatedCallback(thisElem, mutationRecord);
+					});
+				});
 			}
-		};
 
-		/* Component utility Functions */
-		// Get all attributes of element
-		Element.prototype.getAttributes = function(target) {
-			if(typeof target === 'undefined')
-				target = this;
+			_removeObservers() {
+				if(typeof this.observer != 'undefined')
+					this.observer.disconnect();
 
-			var attributes = {};
-			for(var ctr = 0; ctr < target.attributes.length; ctr++) {
-				attributes[target.attributes[ctr].nodeName] = target.attributes[ctr].nodeValue;
+				if(typeof this.contentObserver != 'undefined')
+					this.contentObserver.disconnect();
+			};
+
+			// Called when an attribute of this element is added, removed, or updated
+			attributeChangedCallback(attr, oldVal, newVal) {
+				this._elements.video.setAttribute(attr, newVal); // TO filter for video attributes
+			};
+
+			// Called when an attribute in a child element is changed; uses child observer
+			childAttributeChangedCallback(target, attr, oldVal, newVal) {
+				console.log("childAttributeChangedCallback")
+			};
+
+			// Called when a child element is added; uses child observer
+			childAddedCallback(child) {
+				if(child['localName'] == this.config.eventPointNodeName)
+					this.addEventPointNode(child);
 			}
-			return attributes;
-		};
 
-		Element.prototype.getAttribute = function(attributeName, target) {
-			if(typeof target === 'undefined')
-				target = this;
-
-			for(var ctr = 0; ctr < target.attributes.length; ctr++) {
-				if(target.attributes[ctr].nodeName === attributeName)
-					return target.attributes[ctr].nodeValue;
+			// Called when a child element is removed; uses child observer
+			childRemovedCallback(child) {
+				if(child['localName'] == this.config.eventPointNodeName)
+					this.removeEventPointNode(child);
 			}
-			return undefined;
-		};
 
-		/* Utility Functions */
-		function hasClass(el, className) {
-			if (el.classList)
-				return el.classList.contains(className);
-			else
-				return !!el.className.match(new RegExp('(\\s|^)' + className + '(\\s|$)'))
-		}
-
-		function addClass(el, className) {
-			if (el.classList)
-				el.classList.add(className);
-			else if (!hasClass(el, className)) el.className += " " + className
-		}
-
-		function removeClass(el, className) {
-			if (el.classList)
-				el.classList.remove(className);
-			else if (hasClass(el, className)) {
-				var reg = new RegExp('(\\s|^)' + className + '(\\s|$)');
-				el.className=el.className.replace(reg, ' ')
+			// Called when a child element (child) is added to a child of this (target); uses child observer
+			descendantAddedCallback(target, child) {
+				console.log("descendantAddedCallback")
 			}
-		}
 
-		// Add observers to an element
-		function addElementObserver(element, mutations, listener) {
-			// possible mutations: 	attributes, childList, characterData
-			var observer = new MutationObserver(listener);
+			// alled when a descendant element (child) is removed from a child of this (target); uses child observer
+			descendantRemovedCallback(target, child) {
+				console.log("descendantRemovedCallback")
+			}
 
-			if(mutations.length > 0) {
-				var observerConfig = {};
-				for(var mutationIndex = 0; mutationIndex < mutations.length; mutationIndex++) {
-					observerConfig[mutations[mutationIndex]] = true;
+			// Called when element's innerHtml is changed; uses child observer
+			characterDataChangedCallback(newData) {
+				console.log("characterDataChangedCallback")
+			}
+
+			// Called when a child element is changed; uses child observer
+			childMutatedCallback(targetNode, mutationRecord) {
+				switch(mutationRecord.type) {
+					case "childList":
+						if(mutationRecord.target === targetNode) { // Direct descendant
+							for(let ctr = 0; ctr < mutationRecord.addedNodes.length; ctr++)
+								this.childAddedCallback(mutationRecord.addedNodes[ctr]);
+							for(let ctr = 0; ctr < mutationRecord.removedNodes.length; ctr++)
+								this.childRemovedCallback(mutationRecord.removedNodes[ctr]);
+						}
+						else {
+							for(let ctr = 0; ctr < mutationRecord.addedNodes.length; ctr++)
+								this.descendantAddedCallback(mutationRecord.target, mutationRecord.addedNodes[ctr]);
+							for(let ctr = 0; ctr < mutationRecord.removedNodes.length; ctr++)
+								this.descendantRemovedCallback(mutationRecord.target, mutationRecord.addedNodes[ctr]);
+						}
+						break;
+					case "attributes":
+						this.childAttributeChangedCallback(mutationRecord.target, mutationRecord.attributeName, mutationRecord.oldValue, this.getAttribute(mutationRecord.attributeName, mutationRecord.target));
+						break;
+					case "characterData":
+						this.characterDataChangedCallback(mutationRecord.target.data);
+						break;
 				}
-				observer.observe(element, observerConfig);
-			}
+			};
 
-			return observer;
-			// Returned observer can be removed with observer.disconnect()
-		}
+			/* Component utility Functions */
+			// Get all attributes of element
+			getAttributes(target) {
+				if(typeof target === 'undefined')
+					target = this;
 
-		// Add event triggers for an element
-		function addElementEventListener(element, events, listener) {
-			// if string (single event) passed, convert to Array
-			if(!Array.isArray(events))
-				events = [events];
-
-			for(var eventIndex = 0; eventIndex < events.length; eventIndex++) {
-				element.addEventListener(events[eventIndex], listener);
-			}
-		}
-
-		// Return sum of all objects passed as new object, with later arguments overwriting
-		function objectExtend() {
-			var merged = {};
-			objectForEach(arguments, function(argument) {
-				for (var attrname in argument) {
-					if(argument.hasOwnProperty(attrname))
-						merged[attrname] = argument[attrname];
+				let attributes = {};
+				for(var ctr = 0; ctr < target.attributes.length; ctr++) {
+					attributes[target.attributes[ctr].nodeName] = target.attributes[ctr].nodeValue;
 				}
-			});
-			return merged;
-		}
+				return attributes;
+			}
 
-		// Iterate over object properties
-		function objectForEach(object, callback) {
-			// run function on each property (child) of object
-			var property;
-			for(property in object) { // pull keys before looping through?
-				if (object.hasOwnProperty(property))
-					callback(object[property], property, object);
+
+			/* Utility Functions */
+			hasClass(el, className) {
+				if (el.classList)
+					return el.classList.contains(className);
+				else
+					return !!el.className.match(new RegExp('(\\s|^)' + className + '(\\s|$)'))
+			}
+
+			addClass(el, className) {
+				if (el.classList)
+					el.classList.add(className);
+				else if (!hasClass(el, className)) el.className += " " + className
+			}
+
+			removeClass(el, className) {
+				if (el.classList)
+					el.classList.remove(className);
+				else if (hasClass(el, className)) {
+					let reg = new RegExp('(\\s|^)' + className + '(\\s|$)');
+					el.className=el.className.replace(reg, ' ')
+				}
+			}
+
+			// Add observers to an element
+			_addElementObserver(element, mutations, listener) {
+				// possible mutations: 	attributes, childList, characterData
+				let observer = new MutationObserver(listener);
+
+				if(mutations.length > 0) {
+					let observerConfig = {};
+					for(let mutationIndex = 0; mutationIndex < mutations.length; mutationIndex++) {
+						observerConfig[mutations[mutationIndex]] = true;
+					}
+					observer.observe(element, observerConfig);
+				}
+
+				return observer;
+				// Returned observer can be removed with observer.disconnect()
+			}
+
+			// Add event triggers for an element
+			_addElementEventListener(element, events, listener) {
+				// if string (single event) passed, convert to Array
+				if(!Array.isArray(events))
+					events = [events];
+
+				for(let eventIndex = 0; eventIndex < events.length; eventIndex++) {
+					element.addEventListener(events[eventIndex], listener);
+				}
+			}
+
+			// Return sum of all objects passed as new object, with later arguments overwriting
+			_objectExtend() {
+				let merged = {};
+				this._objectForEach(arguments, function(argument) {
+					for (let attrname in argument) {
+						if(argument.hasOwnProperty(attrname))
+							merged[attrname] = argument[attrname];
+					}
+				});
+				return merged;
+			}
+
+			// Iterate over object properties
+			_objectForEach(object, callback) {
+				// run function on each property (child) of object
+				let property;
+				for(property in object) { // pull keys before looping through?
+					if (object.hasOwnProperty(property))
+						callback(object[property], property, object);
+				}
+			}
+
+			// Filter object properties
+			_objectFilter(object, filter) {
+				// filter object properties (children) using filter function
+				// similar to array filter function
+				let result = {};
+				this._objectForEach(object, function(child, property, parent) {
+					if(filter(child, property, parent))
+						result[property] = child;
+				});
+				return result;
+			}
+
+			// Returns property of object whose value matches search value
+			_objectPropertyOf(object, searchValue) {
+				let property;
+				for(property in object) {
+					if(object.hasOwnProperty(property) && object[property] == searchValue)
+						return property;
+				}
+				return undefined;
 			}
 		}
 
-		// Filter object properties
-		function objectFilter(object, filter) {
-			// filter object properties (children) using filter function
-			// similar to array filter function
-			var result = {};
-			this.objectForEach(object, function(child, property, parent) {
-				if(filter(child, property, parent))
-					result[property] = child;
-			});
-			return result;
-		}
-
-		// Returns property of object whose value matches search value
-		function objectPropertyOf(object, searchValue) {
-			var property;
-			for(property in object) {
-				if(object.hasOwnProperty(property) && object[property] == searchValue)
-					return property;
-			}
-			return undefined;
-		}
-
-		document.registerElement(componentName, Element);
-	})(window, document);
+		customElements.define('stretch-video', StretchVideo);
+	})();
 </script>
