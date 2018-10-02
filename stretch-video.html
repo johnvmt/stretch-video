@@ -31,9 +31,9 @@
 			filter: invert(100%) opacity(75%);
 		}
 	</style>
-	<div id="container" style="width: 100%; height: 100%; background-color: #333333; overflow: hidden">
+	<div id="container" style="width: 100%; height: 100%; overflow: hidden">
 		<canvas style="width: 100%; height: 100%;"></canvas>
-		<div id="controls" style="z-index: 1; position: absolute; bottom: 0; left: 0;">
+		<div id="controls" style="z-index: 1; position: absolute; bottom: 0; left: 0; display: none;">
 			<a data-transport="playPauseToggle"><img data-localsrc="images/play.svg" src="images/play.svg" /></a>
 			<!--<a data-transport="play"><img data-localsrc="images/play.svg" src="images/play.svg" /></a>
 			<a data-transport="pause"><img data-localsrc="images/pause.svg" src="images/pause.svg" /></a>-->
@@ -56,17 +56,12 @@
 			constructor() {
 				super(); // Always call super first in constructor
 
+				const thisElem = this;
+
 				// Gets content from <template>
-				let shadow = this.attachShadow({mode: 'open'});
-				let template = componentDoc.querySelector('template[is=stretch-video]').content;
+				const shadow = this.attachShadow({mode: 'open'});
+				const template = componentDoc.querySelector('template[is=stretch-video]').content;
 				shadow.appendChild(document.importNode(template, true));
-
-				let thisElem = this;
-
-				thisElem.eventPoints = thisElem._eventPoints();
-				thisElem.currentTime = 0;
-				thisElem.nextPointTime = null;
-				thisElem.eventPointNodes = {};
 
 				thisElem._elements = {
 					controlsContainer: shadow.querySelector('#controls'),
@@ -76,9 +71,87 @@
 
 				thisElem._elements.canvasContext = thisElem._elements.canvas.getContext('2d');
 
+				thisElem.eventPoints = thisElem._eventPoints();
+				thisElem.nextPointTime = null;
+				thisElem.eventPointNodes = {};
+
 				thisElem.config = {
 					eventPointNodeName: 'event-point'
 				};
+			}
+
+			_setVideoStringAttribute(attributeName, propertyValue) {
+				const videoElem = this._elements.video;
+				const parsedAttributeValue = this.getAttribute(attributeName);
+				const parsedVideoAttributeValue = videoElem.getAttribute(attributeName);
+
+				if(parsedAttributeValue !== propertyValue) {
+					if(propertyValue !== null)
+						this.setAttribute(attributeName, propertyValue);
+					else
+						this.removeAttribute(attributeName);
+				}
+
+				if(parsedVideoAttributeValue !== propertyValue) {
+					if(propertyValue !== null)
+						videoElem.setAttribute(attributeName, propertyValue);
+					else
+						videoElem.removeAttribute(attributeName);
+				}
+			}
+
+			_setVideoBooleanAttribute(attributeName, propertyValue) {
+				const videoElem = this._elements.video;
+				const parsedPropertyValue = this._parseBooleanAttribute(attributeName, propertyValue);
+				this._setVideoStringAttribute(attributeName, parsedPropertyValue ? attributeName : null);
+			}
+
+			_parseBooleanAttribute(attributeName, attributeValue) {
+				return (typeof attributeValue === 'boolean' && attributeValue) || (typeof attributeValue === 'string' && (attributeValue.trim().length === 0 || attributeValue.toLowerCase() === attributeName));
+			}
+
+			set src(propertyValue) {
+				this._setVideoStringAttribute('src', propertyValue)
+			}
+
+			set muted(propertyValue) {
+				this._setVideoBooleanAttribute('muted', propertyValue)
+			}
+
+			set loop(propertyValue) {
+				this._setVideoBooleanAttribute('loop', propertyValue)
+			}
+
+			set autoplay(propertyValue) {
+				this._setVideoBooleanAttribute('autoplay', propertyValue)
+			}
+
+			set controls(propertyValue) {
+				const attributeName = 'controls';
+				const parsedAttributeValue = this._parseBooleanAttribute(attributeName, this.getAttribute(attributeName));
+				const parsedPropertyValue = this._parseBooleanAttribute(attributeName, propertyValue);
+
+				if(parsedPropertyValue)
+					this._elements.controlsContainer.style.display = 'block';
+				else
+					this._elements.controlsContainer.style.display = 'none';
+
+				if(parsedAttributeValue !== parsedPropertyValue) {
+					if(parsedPropertyValue)
+						this.setAttribute(attributeName, attributeName);
+					else
+						this.removeAttribute(attributeName);
+				}
+			}
+
+			get currentTime() {
+				let videoElem = this._elements.video;
+				return (typeof this._elements.video === 'object' && typeof this._elements.video.currentTime !== 'undefined') ? Number(this._elements.video.currentTime) : 0;
+			}
+
+			set currentTime(time) {
+				let timeParsed = parseFloat(time);
+				this.setCurrentTime(timeParsed);
 			}
 
 			connectedCallback() {
@@ -91,7 +164,7 @@
 				});
 
 				// Add the video to the container with attributes set on <stretch-video>
-				thisElem.addVideo(thisElem.getAttributes(), thisElem._elements.videoContainer);
+				thisElem.addVideo(thisElem._elements.videoContainer);
 
 				thisElem.addButtonsEventListeners(thisElem._elements.controlsContainer, ['[data-transport]']);
 
@@ -124,7 +197,7 @@
 				);
 
 				if(typeof parsedArgs.time == 'number')
-					this.setTime(parsedArgs.time, false);
+					this.setCurrentTime(parsedArgs.time, false);
 
 				let videoElem = this._elements.video;
 				videoElem.play();
@@ -149,7 +222,7 @@
 
 				// TODO determine behavior when time is set (should video pause immediately, or run to specified time?)
 				if(typeof parsedArgs.time == 'number')
-					this.setTime(parsedArgs.time, false);
+					this.setCurrentTime(parsedArgs.time, false);
 
 				let videoElem = this._elements.video;
 				videoElem.pause();
@@ -164,14 +237,11 @@
 
 			reset(mirrorTag) {
 				// TODO add ability to set non-0 start times
-				this.setTime(0);
-				//this.play(false);
-				//this.pause(false);
+				this.setCurrentTime(0);
 				this.emitMirror(mirrorTag, 'reset');
 			}
 
-			setTime() {
-				// TODO should be triggered by setting currentTime attribute
+			setCurrentTime() {
 				let parsedArgs = this._parseArgs(
 					arguments,
 					[
@@ -181,11 +251,13 @@
 					]
 				);
 
-				let videoElem = this._elements.video;
-				videoElem.currentTime = parsedArgs.time;
+				if(typeof this._elements === 'object' && typeof this._elements.video === 'object' && this._elements.video.currentTime != parsedArgs.time) {
+					const videoElem = this._elements.video;
+					videoElem.currentTime = parsedArgs.time;
 
-				if(parsedArgs.emitMirror)
-					this.emitMirror(parsedArgs.mirrorTag, 'setTime', [parsedArgs.time]);
+					if(parsedArgs.emitMirror)
+						this.emitMirror(parsedArgs.mirrorTag, 'setCurrentTime', [parsedArgs.time]);
+				}
 			}
 
 			seekable(time) {
@@ -206,19 +278,18 @@
 				canvasElem.height = videoElem.videoHeight;
 			}
 
-			addVideo(videoAttributes, videoContainer) {
+			addVideo(videoContainer) {
 				let thisElem = this;
-
-				// create the <video> tag
 				let videoElem = document.createElement('video');
 
 				thisElem._elements.video = videoElem;
 
-				// copy attributes to <video>
-				for(let attributeKey in videoAttributes) {
-					if(videoAttributes.hasOwnProperty(attributeKey))
-						videoElem[attributeKey] = videoAttributes[attributeKey];
-				}
+				thisElem.currentTime = 0;
+				thisElem.controls = thisElem.getAttribute('controls');
+				thisElem.src = thisElem.getAttribute('src');
+				thisElem.muted = thisElem.getAttribute('muted');
+				thisElem.loop = thisElem.getAttribute('loop');
+				thisElem.autoplay = thisElem.getAttribute('autoplay');
 
 				// resize the video once the video's metadata (size) is loaded
 				videoElem.addEventListener('loadedmetadata', function(event) {
@@ -227,8 +298,11 @@
 
 				videoElem.addEventListener('canplaythrough', function(event) {
 					// play+pause to overcome Chrome bug
+					// Only trigger on first load
 					thisElem.play(false);
 					thisElem.pause(false);
+				}, {
+					once: true
 				});
 
 				videoElem.addEventListener('play', function(event) {
@@ -281,9 +355,9 @@
 				let videoElem = thisElem._elements.video;
 				let canvasContext = thisElem._elements.canvasContext;
 
+				canvasContext.clearRect(0, 0, videoElem.videoWidth, videoElem.videoHeight);
 				canvasContext.drawImage(videoElem, 0, 0, videoElem.videoWidth, videoElem.videoHeight);
 				thisElem.updateTime(videoElem.currentTime);
-
 			}
 
 			updateTime(videoTime) {
@@ -571,9 +645,13 @@
 					this.contentObserver.disconnect();
 			};
 
+			static get observedAttributes() {
+				return ['currentTime', 'muted', 'controls', 'loop', 'autoplay'];
+			}
+
 			// Called when an attribute of this element is added, removed, or updated
 			attributeChangedCallback(attr, oldVal, newVal) {
-				this._elements.video.setAttribute(attr, newVal); // TO filter for video attributes
+				this[attr] = newVal; // Set the property
 			};
 
 			// Called when an attribute in a child element is changed; uses child observer
