@@ -1,3 +1,4 @@
+
 <template is="stretch-video">
 	<style>
 		:host {
@@ -45,7 +46,6 @@
 </template>
 
 <script>
-
 	(function() {
 		let componentDoc = (document._currentScript || document.currentScript).ownerDocument;
 		let componentDir = componentDoc.baseURI.substring(0, componentDoc.baseURI.lastIndexOf('/'));
@@ -199,6 +199,8 @@
 				if(typeof parsedArgs.time == 'number')
 					this.setCurrentTime(parsedArgs.time, false);
 
+				this.nextPointTime = this.eventPoints.nextTimeAfter(this.currentTime);
+
 				let videoElem = this._elements.video;
 				videoElem.play();
 
@@ -238,6 +240,7 @@
 			reset(mirrorTag) {
 				// TODO add ability to set non-0 start times
 				this.setCurrentTime(0);
+				this.nextPointTime = this.eventPoints.nextTimeAfter(this.currentTime);
 				this.emitMirror(mirrorTag, 'reset');
 			}
 
@@ -380,22 +383,22 @@
 				let thisElem = this;
 				let eventPointAttributes = thisElem.getAttributes(eventPointNode);
 				let eventPointTime = Number(eventPointAttributes.time);
+				let eventCallback = null;
 
-				if(typeof eventPointAttributes.callback != 'undefined') {
-					if(typeof eventPointAttributes.callback == 'string') {
-						var eventCallback = function () {
+				if(typeof eventPointAttributes.callback !== 'undefined') {
+					if(typeof eventPointAttributes.callback === 'string') {
+						eventCallback = function () {
 							window[eventPointAttributes.callback]();
 						}
 					}
-					else if(typeof eventPointAttributes.callback == 'function') {
-						let eventCallback = eventPointAttributes.callback;
-					}
+					else if(typeof eventPointAttributes.callback === 'function')
+						eventCallback = eventPointAttributes.callback;
 					else
 						throw new Error('function_not_found');
 				}
 				else {
 					// Default: pause
-					let eventCallback = function() {
+					eventCallback = function() {
 						thisElem.pause(false); // Prevent emitting (mirrored elements will stop by themselves)
 					};
 				}
